@@ -1,0 +1,103 @@
+#+Title:     IX Ciencia de datos avanzada: Aplicaciones Spark
+#+Author:    Adolfo De Unánue
+#+Email:     adolfo.deunanue@itam.mx
+#+DATE:      2017
+#+DESCRIPTION: 
+#+KEYWORDS:  
+#+LANGUAGE:  en
+
+#+STARTUP: beamer
+#+STARUP: oddeven
+
+#+LaTeX_CLASS: beamer
+#+LaTeX_CLASS_OPTIONS: [presentation, smaller]
+
+#+BEAMER_THEME: DarkConsole
+
+#+OPTIONS: H:1 toc:nil 
+#+OPTIONS: tex:t
+
+#+SELECT_TAGS: export
+#+EXCLUDE_TAGS: noexport
+
+#+COLUMNS: %20ITEM %13BEAMER_env(Env) %6BEAMER_envargs(Args) %4BEAMER_col(Col) %7BEAMER_extra(Extra)
+
+* Aplicaciones pyspark
+
+
+Puedes usar la siguiente como plantilla para tus aplicaciones
+
+#+BEGIN_SRC ipython :tangle spark-ejemplo/pyspark-app-template.py 
+# -*- coding: utf-8 -*-
+
+import sys
+
+import click
+
+
+from pyspark.sql import SparkSession
+from pyspark import SparkConf, SparkContext
+
+
+@click.command()
+@click.option('--master')
+@click.option('--app_name')
+@click.option('--input', type=click.Path())
+@click.option('--output', type=click.Path())
+def data_science_thingy(master, app_name, input, output):
+    spark = SparkSession.builder\
+                        .master(master)\
+                        .appName(app_name)\
+                        .getOrCreate()
+
+    spark.sparkContext.setLogLevel('ERROR')
+
+    txs = spark.read.load(input)
+
+    txs.printSchema()
+
+    txs.createOrReplaceTempView("txs")
+
+    txs_supercitos = spark.sql("select * from txs where comercio = 'SUPERCITO'")
+
+    txs_supercitos.sample(fraction=0.1, withReplacement=False).show()
+
+    txs_supercitos.write.parquet(output, mode='overwrite')
+
+if __name__ == "__main__":
+    data_science_thingy()
+
+#+END_SRC
+
+
+* spark-submit: Enviando la app al cluster
+
+
+Manda la aplicación al cluster
+
+#+BEGIN_EXAMPLE shell
+ spark-submit /spark-ejemplo/pyspark-app-template.py \
+               --master spark://master:7077  
+               --app_name template-test  
+               --input /spark-ejemplo/output/parquet/transacciones  
+               --output /spark-ejemplo/output/parquet/transacciones_supercito
+#+END_EXAMPLE
+
+
+Si abres [[0.0.0.0:8080]] deberás de ver la aplicación =template-test=
+
+*NOTA* Esto se puede usar directamente con ambos modelos que vimos de =Luigi=
+
+
+
+
+* COMMENT Settings
+# Local Variables:
+# org-babel-sh-command: "/bin/bash"
+# org-confirm-babel-evaluate: nil
+# org-export-babel-evaluate: nil
+# ispell-check-comments: exclusive
+# ispell-local-dictionary: "spanish"
+# End:
+
+

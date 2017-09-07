@@ -1,0 +1,987 @@
+#+Title:     IX Ciencia de datos avanzada: Spark
+#+Author:    Adolfo De Unánue
+#+Email:     adolfo.deunanue@itam.mx
+#+DATE:      2017
+#+DESCRIPTION: 
+#+KEYWORDS:  
+#+LANGUAGE:  en
+
+#+STARTUP: beamer
+#+STARUP: oddeven
+
+#+LaTeX_CLASS: beamer
+#+LaTeX_CLASS_OPTIONS: [presentation, smaller]
+
+#+BEAMER_THEME: DarkConsole
+
+#+OPTIONS: H:1 toc:nil 
+#+OPTIONS: tex:t
+
+#+SELECT_TAGS: export
+#+EXCLUDE_TAGS: noexport
+
+#+COLUMNS: %20ITEM %13BEAMER_env(Env) %6BEAMER_envargs(Args) %4BEAMER_col(Col) %7BEAMER_extra(Extra)
+
+* Apache Spark
+
+
+* Checklist: Docker
+
+- Si no lo instalaron:
+  - https://store.docker.com/editions/community/docker-ce-server-ubuntu?tab=description 
+
+- Si ya lo instalaron, verifiquen:
+
+#+begin_src shell :results verbatim drawer
+docker --version
+#+end_src
+
+#+RESULTS:
+:RESULTS:
+Docker version 17.04.0-ce, build 4845c56
+:END:
+
+* Checklist: Docker compose
+
+- En esta liga:  https://docs.docker.com/compose/install/
+
+- Si están en ~Mac OS X~ (o ~Windows~)  e instalaron ~docker~, ya acabaron.
+
+- En =GNU/Linux=:
+
+#+begin_example
+> sudo su    ## Nos convertimos en root 
+## El prompt cambió ahora eres root!
+% curl -L https://github.com/docker/compose/releases/download/1.12.0/docker-compose-`uname -s`-`uname -m` > /usr/local/bin/docker-compose
+#+end_example
+
+
+* Docker compose
+
+- Damos permisos de ejecución
+
+#+begin_example
+## Aún dentro del usuario root
+## (o agrega sudo al principio)
+chmod +x /usr/local/bin/docker-compose
+#+end_example
+
+
+#+begin_src shell  :results verbatim drawer
+docker-compose --version
+#+end_src
+#+RESULTS:
+:RESULTS:
+docker-compose version 1.10.0, build 4bd6f1a
+:END:
+
+* Checklist: datos
+
+Los datos están en esta [[https://www.dropbox.com/sh/esin63n51nuiob9/AAAjaY-g6ZFdHESGf3n9TF2aa?dl=0][liga]], copialos a =spark-ejemplo/data=
+
+
+* Antes de comenzar...
+
+Ve a la carpeta del módulo y ejecuta 
+
+Crea un volumen de docker (para compartir /storage/  en el /cluster/ y el /driver/)
+
+#+BEGIN_EXAMPLE
+docker volume create --name bbva_store --opt type=none \
+ --opt device=PATH_COMPLETO/spark-ejemplo --opt o=bind 
+#+END_EXAMPLE
+
+#+BEGIN_EXAMPLE shell 
+docker-compose --project-name bbva up -d
+#+END_EXAMPLE
+
+Esto levantará un minicluster de spark para que practiquemos.
+
+Para probar que funcione usa el *cliente* de la clase:
+
+#+BEGIN_EXAMPLE shell 
+docker run -it --name bbva_driver \
+--network bbva_bbva_net \
+--volume bbva_store:/spark-ejemplo \
+gettyimages/spark \
+/bin/bash
+#+END_EXAMPLE
+
+
+* Antes de comenzar...
+
+Ahora configuraremos =pyspark= para que use =ipython=
+
+
+#+BEGIN_EXAMPLE shell
+pip install ipython pandas click # Instala paquetes que usaremos
+#+END_EXAMPLE
+
+Por último
+
+#+BEGIN_EXAMPLE
+PYSPARK_DRIVER_PYTHON=/usr/local/bin/ipython pyspark --master spark://master:7077
+#+END_EXAMPLE
+
+*NOTA*: No te preocupes, ahorita explico todo esto
+
+
+* ¿Qué es Apache Spark?
+
+- Un motor general para procesamiento a gran escala de datos.
+- Ejecuta en Apache YARN, standalone, en Amazon EC2 o sobre Apache Mesos.
+  - Aquí sólo veremos el funcionamiento standalone
+- Soporta varios lenguajes de programación
+  - Python, Scala, Java y recientemente R.
+
+* Apache Spark vs Apache Hadoop
+
+- =Spark= mantiene la escalabilidad lineal de =MapReduce= y su tolerancia al
+  fallo, pero la extiende de 2 maneras importantes:
+  1. En lugar de usar el paradigma /map-reduce/, utiliza un grafo acíclico de
+     operadores (*DAG*), su beneficio es que *no* pasa por disco en cada paso
+     intermedio como lo haría MapReduce.
+  2. Extiende a /MapReduce/ con procesamiento en memoria.
+
+* ¿Por qué Apache Spark?
+
+ - Soporta todos los formatos de archivos que soporta =MapReduce=
+ - Puede interactuar con bases de datos =NoSQL= como =Cassandra= y =HBase=
+ - Exploración Iterativa
+ - Puede ejecutar en batch.
+ - Soporta streaming, leyendo de =Flume= o =Kafka=
+
+
+* Historia
+
+- Todo empezó con el proyecto Mesos, un framework distribuido de ejecución,
+  realizado para una clase en UC Berkeley en 2009.
+- Spark fué creado para probar Mesos.
+- Fué tal su éxito que se abrió el código en 2010.
+
+
+* Plataforma de Spark
+
+#+CAPTION: /Source/: spark.apache.org 
+#+ATTR_ORG: :width 600px :height 600px
+#+ATTR_HTML: :width 800px :height 600px
+#+ATTR_LATEX: :height 150px :width 200px
+[[./imagenes/spark-stack.png]]
+
+* Modelo de ejecución
+
+#+ATTR_ORG: :width 600px :height 600px
+#+ATTR_HTML: :width 800px :height 600px
+#+ATTR_LATEX: :height 150px :width 200px
+[[./imagenes/execution-model.png]]
+
+
+* ¿Y con =PySpark=?
+
+#+CAPTION: /Source/: [[https://cwiki.apache.org/confluence/display/SPARK/PySpark+Internals][PySpark Internals]]
+#+ATTR_ORG: :width 600px :height 600px
+#+ATTR_HTML: :width 800px :height 600px
+#+ATTR_LATEX: :height 150px :width 200px
+[[./imagenes/PySparkDataFlow.png]]
+
+* Ciclo de vida
+
+- Crear un RDD a partir de datos externos
+- Transformarlo /lazily/ en nuevos RDDs usando *transformaciones*.
+- Usa =cache()= en los RDDs que vayas a reutilizar
+- Utiliza *acciones* para iniciar la ejecución en paralelo
+
+* Spark RDD
+
+
+- Resilient Distributed Dataset
+- Abstracción que representa una colección de objetos de sólo lectura
+  particionada a lo largo de varias máquinas.
+
+* Spark RDD: Ventajas
+
+- Pueden ser reconstruidas gracias a su linaje.
+- Pueden ser manipuladas en paralelo.
+- Están /cached/ en memoria para su uso inmediato.
+- Son almacenadas de manera distribuida.
+- Contienen cualquier tipo de dato, incluidos los definidos por el programador.
+
+* Spark RDD
+#+ATTR_ORG: :width 600px :height 600px
+#+ATTR_HTML: :width 800px :height 600px
+#+ATTR_LATEX: :height 150px :width 200px
+[[./imagenes/workers.png]]
+
+* Spark RDD: Operaciones
+
+- Soportan dos tipos de operaciones:
+  – Transformaciones
+  – Acciones
+- Las transformaciones construyen un nuevo RDD a partir del anterior.
+  - El cual queda guardado en el linage graph (DAG)
+- Las acciones calculan el resultado basado en el RDD.
+- La diferencia es que las transformaciones son computadas de manera lazy y sólo
+  son ejecutadas hasta la acción. 
+
+* Operaciones
+
+#+ATTR_ORG: :width 600px :height 600px
+#+ATTR_HTML: :width 800px :height 600px
+#+ATTR_LATEX: :height 150px :width 200px
+[[./imagenes/dag-i.png]]
+
+* Operaciones
+
+#+ATTR_ORG: :width 600px :height 600px
+#+ATTR_HTML: :width 800px :height 600px
+#+ATTR_LATEX: :height 150px :width 200px
+[[./imagenes/dag-ii.png]]
+
+
+* Transformaciones
+
+Las principales transformaciones (o por lo menos las más usadas) se listan a
+continuación:
+
+- =map=
+  - Usa una función y la aplica a cada elemento del RDD, el resultado se guarda
+    en un nuevo RDD. 
+- =filter=
+  - Usa una función y devuelve sólo los elementos que pasan la función (que
+    devuelven verdadero) en el nuevo RDD. 
+- =flatMap=
+  - Como el map pero regresa un iterador por cada elemento
+    -Por ejemplo una función que divide una cadena.
+- =distinct=
+- =sample=
+- =join=
+- =cogroup=
+- =coalesce=
+- =union=, =intersection=, =substract=, =cartesian=
+
+*NOTA*: En los ejemplos que siguen usaremos =collect()=,  =count()=, =take()=. Estas
+funciones no son *transformaciones*, sino *acciones* que se explican más abajo. 
+
+* Ejercicio (I/III)
+
+Creamos un =RDD= a partir de enteros
+
+#+BEGIN_EXAMPLE ipython
+numeros = sc.parallelize(range(1000))
+## Usaremos una función anónima para elevar los números al cuadrado
+cuadrados = numeros.map(lambda x: x*x)
+cuadrados.take(5) ## Esto es una acción. ¡No confundir!
+muestra = cuadrados.sample(fraction=0.3, withReplacement=False)
+muestra.count()
+muestra.take(5)
+pares = muestra.filter(lambda x: x%2 == 0)
+pares.take(5)
+pares.count()
+#+END_EXAMPLE
+
+El =DAG= ahora está formado por =numeros -> cuadrados -> muestra -> pares=
+
+* Ejercicio (II/III)
+
+Es posible reescribir lo anterior como sigue:
+
+#+BEGIN_EXAMPLE ipython
+pares2 = numeros.map(lambda x: x*x)\
+                .sample(fraction=0.3, withReplacement=False)\
+                .filter(lambda x: x%2 == 0)
+#+END_EXAMPLE
+
+El DAG tiene la misma estructura (con numeros como raíz), pero sus nodos son
+anónimos.
+
+* Ejercicio (III/III)
+Una transformación que causa confusión es =flatMap=, veamos un ejemplo
+
+#+BEGIN_EXAMPLE ipython
+frases = sc.parallelize(["hola a todos", "Arquitectura de Producto de Datos", "Análisis de redes sociales"])
+palabras = frases.map(lambda frase: frase.split(" ")).colllect()
+palabras     ## Nota la estructura anidada
+#+END_EXAMPLE
+
+Observa que obtuvimos un arreglo de arreglos y quizá esto no sea lo que
+necesitamos. 
+
+Usando =flatMap= "aplanamos" el RDD resultante. 
+
+
+#+BEGIN_EXAMPLE ipython
+palabras = frases.flatMap(lambda frase: frase.split(" ")).collect()
+palabras
+#+END_EXAMPLE
+
+* Acciones
+
+- =first=
+- =take=, =takeSample=
+- =reduce=
+  - Opera en dos elementos del mismo tipo del RDD y regresa un elemento del mismo tipo.
+- =aggregate=
+  - Nos permite implementar acumuladores.
+=collect=
+  - Regresa el =RDD= completo.
+- =count=, =countByValue=, =top=, =foreach=, =countByKey=
+- =saveAsTextFile=
+- etc.
+
+Es importante notar que todos estas operaciones acaban con datos en el /driver/.
+
+* Ejercicio
+
+#+BEGIN_EXAMPLE ipython
+numeros.first()
+numeros.take(5)
+numeros.takeSample(num=30, withReplacement=False)
+suma = numeros.reduce(lambda x, y: x + y)
+suma
+#+END_EXAMPLE
+
+
+* Ejemplo (I/III)
+
+Simularemos transacciones con TDC
+
+#+BEGIN_EXAMPLE ipython
+import random
+random.randint(10,1000)
+
+## Acciones posibles
+accion = ['RETIRO', 'COMPRA', 'CONSULTA']
+random.choice(accion)
+
+## Siempre usar un UUID
+import uuid
+clientes = [str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())]
+clientes  
+#+END_EXAMPLE
+
+* Ejemplo (II/III)
+
+La función para generar la transacción es
+
+#+BEGIN_EXAMPLE ipython
+def generate_transaction():
+    """
+    Regresa una transacción falsa, la primera columna es el número de tarjeta ofuscado, las demás
+    columnas son el comercio, la acción realizada en el comercio y el monto de la acción.
+    Devuelve una cadena separada por pipes (|)
+    """
+    comercio = ['ARENA COLISEO', 'SUPERCITO', 'RESTAURANTE EL TRABAJO']
+    accion = ['RETIRO', 'COMPRA']
+    
+    return "%s|%s|%s|%s" % (random.choice(clientes), random.choice(comercio), random.choice(accion), random.randint(10, 10000))
+
+generate_transaction()
+#+END_EXAMPLE
+
+Y para generar muchas transacciones
+
+#+BEGIN_EXAMPLE ipython
+def generate_transactions(number=10000):
+    """
+    Regresa una lista de transacciones falsa.
+    """
+    txs = []
+    for i in range(number):
+        txs.append(generate_transaction())
+    return txs
+#+END_EXAMPLE
+
+* Ejemplo (III/III)
+
+#+BEGIN_EXAMPLE ipython
+txs = sc.parallelize(generate_transactions(number=10000))
+txs.first()
+txs.count()
+txs.saveAsTextFile("./spark-ejemplo/output/raw/transacciones")
+#+END_EXAMPLE
+
+Supongamos que queremos realizar un conteo por tarjeta, los pasos serían los siguientes:
+Designamos el número de tarjeta como la llave (key)
+
+#+BEGIN_EXAMPLE ipython
+kv_txs = txs.map(lambda x: x.split("|"))\
+            .map(lambda x: (x[0], x[1:])) # x[0] contiene el número de tarjeta ofuscado
+kv_txs.take(5)
+kv_txs.keys().first()
+kv_txs.values().first()
+kv_txs.count()
+kv_txs.countByKey()
+#+END_EXAMPLE
+
+
+* Es importante tener en cuenta que...
+
+- Hay cosas que ocurren localmente (en el /driver/), hay cosas que ocurren en el
+  /cluster/
+
+- Podemos dividir las operaciones en *narrow* y *wide*
+
+- *narrow* Cada partición del =RDD= padre es usada a lo más por una partición
+  del =RDD= hijo.
+
+- *wide* Varias particiones hijas del =RDD= dependen en una o más particiones
+  del =RDD= padre.
+
+
+* Narrow vs Wide
+
+#+CAPTION: /Source/:  [[http://training.databricks.com/visualapi.pdf][guía visual]]
+#+ATTR_ORG: :width 600px :height 600px
+#+ATTR_HTML: :width 800px :height 600px
+#+ATTR_LATEX: :height 150px :width 200px
+[[./imagenes/narrow_vs_wide.png]]
+
+
+* Documentación
+
+- Siempre tenla a la mano, la documentación de la *API* está [[http://spark.apache.org/docs/latest/api/python/][aquí]]
+
+- Otra cosa importante, para eficiencia sobre todo, es la [[http://training.databricks.com/visualapi.pdf][guía visual]]
+
+
+* Ejemplo (I/VII)
+
+*NOTA*: Este ejemplo es una modificación del encontrado en el primer capítulo de
+/Advanced Analytics with Spark/ de *OReilly*
+
+1. Ejecuta el cliente de =spark= en =docker= (ve las instrucciones del
+   principio)
+
+2. En la carpeta =data= ejecuta lo siguiente:
+
+#+BEGIN_EXAMPLE shell 
+mkdir linkage
+cd linkage
+curl -L -o donation.zip http://bit.ly/1Aoywaq
+unzip donation.zip
+unzip 'block_*.zip'
+rm *.zip
+rm -R documentation
+rm frequencies.csv
+#+END_EXAMPLE
+
+3. En el =docker= teclea:
+
+#+BEGIN_EXAMPLE shell 
+pyspark --master spark://master:7077
+#+END_EXAMPLE
+
+* Ejemplo (II/VII)
+
+#+BEGIN_EXAMPLE ipython
+rawBlocks = sc.textFile("data/linkage/")             # Primer nodo del DAG
+rawBlocks                                            # Esto es un RDD
+head = rawBlocks.take(10)                            # Datos al driver
+head                                                 # Esto no es un RDD
+len(head)
+type(head)                                           # Una lista simple de Python 
+#+END_EXAMPLE
+
+* Ejemplo (III/VII)
+
+#+BEGIN_EXAMPLE ipython
+rawBlocks.first()                                    # La primera línea es un header
+
+def isHeader(line):                                  # Definimos un método sencillo de python
+    return "id_1" in line
+
+noheader = rawBlocks.filter(lambda line: not isHeader(line)) # Esto ocurre en el cluster, segundo nodo del DAG
+
+noheader.first()                                     # De regreso al driver
+#+END_EXAMPLE
+
+* Ejemplo (IV/VII)
+
+Vamos a parsear las líneas de texto para darles sentido, tomemos como ejemplo
+una de ellas
+
+#+BEGIN_EXAMPLE ipython
+linea = head[3]
+linea
+piezas = linea.split(',')
+piezas
+#+END_EXAMPLE
+
+Podemos recuperar los campos:
+
+#+BEGIN_EXAMPLE ipython
+id_1 = int(piezas[0])
+id_2 = int(piezas[1])
+matched = True if "true" == piezas[11].lower() else False  # Operador ternario de python
+scores = piezas[2:11]                                      # Slicing
+# Falta convertir los scores a float
+map(lambda s: float(s), scores)                                 # Esto truena por los "?"
+#+END_EXAMPLE
+
+* Ejemplo (V/VII)
+
+Definamos otro método para limpiar
+
+#+BEGIN_EXAMPLE ipython
+import math
+
+def toFloat(s):
+   return float('nan') if "?" == s else float(s)
+
+list(map(lambda s: toFloat(s), scores))
+
+
+def parse(linea):
+    piezas = linea.split(',')
+    id_1 = int(piezas[0])
+    id_2 = int(piezas[1])
+    scores = list(map(lambda s: toFloat(s), piezas[2:11]))
+    matched = True if "true" == piezas[11].lower() else False
+    return (id_1, id_2, scores, matched)
+
+parse(linea)
+#+END_EXAMPLE
+
+Nota que todo esto está pasando localmente
+
+* Ejemplo (VI/VII)
+
+Aunque esto funciona, hay maneras más elegantes de hacerlo
+
+#+BEGIN_EXAMPLE ipython
+from pyspark.sql import Row
+
+Record = Row('id_1', 'id_2', 'scores', 'matched')
+
+def parse(linea):
+    piezas = linea.split(',')
+    id_1 = int(piezas[0])
+    id_2 = int(piezas[1])
+    scores = list(map(lambda s: toFloat(s), piezas[2:11]))
+    matched = True if "true" == piezas[11].lower() else False
+    return Record(id_1, id_2, scores, matched)
+
+tupla = parse(linea)
+
+tupla.id_1
+tupla.scores
+#+END_EXAMPLE
+
+* Ejemplo (VII/VII)
+
+Usemos el cluster
+
+#+BEGIN_EXAMPLE ipython
+records = rawBlocks.filter(lambda linea: not isHeader(linea)).map(lambda linea: parse(linea))
+records.cache()
+records.count()
+
+matchCounts = records.map(lambda record: record.matched).countByValue()
+matchCounts
+
+summary = records.map(lambda record: record.scores[0]).filter(lambda record: not math.isnan(record)).stats()
+summary
+#+END_EXAMPLE
+
+* Spark Dataset
+
+- El =RDD= es la abstracción original de =Spark=, pero en los últimos años, se
+  evolucionó tomando ideas de =R= y de =scikitlearn=, en particular la abstracción
+  de =DataFrame=.
+
+- Básicamente un =DataFrame= es un =RDD[Row]= donde =Row= es una =tuple= (o un
+  =Array[Any]= en =scala=)
+
+- Esta idea se ha llevado más lejos, y a partir de =Saprk 2.0=, =Dataset= es la
+  nueva abstracción de =Spark=. 
+
+- Además esta nueva abstracción proveé un nuevo punto de acceso =SparkSession=
+
+* SparkSession
+
+- Unifica la interfaz para escribir/leer en varios formatos (=json=, =parquet=, =orc=,
+  =csv=, etc.)
+
+#+BEGIN_EXAMPLE shell
+df = spark.read \
+          .csv("path", header=True)
+#+END_EXAMPLE 
+
+#+BEGIN_EXAMPLE shell
+df = spark.write \
+               .parquet("path", mode="append", partitionBy="columns")
+#+END_EXAMPLE
+
+
+* Spark Datasets
+
+- Soporta una gran cantidad de formatos de datos y sistemas de almacenamiento.
+  – =json=, =parquet=, =avro=, =csv=, etc.
+- Optimización con [[https://databricks.com/blog/2015/04/13/deep-dive-into-spark-sqls-catalyst-optimizer.html][Spark SQL Catalyst]]
+  - De hecho son más eficientes que los RDD
+- APIs en Python, Java, Scala, R.
+- Integrados con toda la infraestructura de Spark.
+  – ML, Streaming, GraphX, etc.
+
+* Spark Datasets
+
+- Al estar construidas sobre Spark RDD, puedes usar operaciones de RDD sobre un
+  Dataset, pero no es recomendable, ya que obtendrías un RDD de regreso. 
+- Los Datasets (debido al optimizador Catalyst) son mucho más rápidos que los
+  RDDs, además de que esa velocidad ganada es igual en todos los lenguajes.
+  – Esto no sucede con los RDDs, un RDD en Scala es más rápido que un RDD en Python.
+
+* Spark Datasets
+
+- Por default Spark utiliza el SQLContext nativo, pero, si estás conectado a un
+  cluster con Apache Hive, puedes utilizar el HiveContext en su lugar.
+- Esto te permitirá usar todo el HiveQL, sus udf's y escribir/leer a tablas en Hive.
+- En este taller NO tenemos un HiveContext
+  - =:(=
+
+
+* Spark Datasets
+
+- Al igual que los RDDs, los Datasets pueden ser operados mediante transformaciones y acciones.
+- Las Transformaciones son lazy pero contribuyen a la planeación de la ejecución
+  del query, las Acciones provocan la ejecución del query.
+- Esto último significa que al ejecutarse la acción, Spark lee el data source y
+  los datos fluyen a través del DAG generado por el optimizador, al concluir el
+  resultado de la acción se despliega en el Driver.
+
+* Ejemplo (I/IV)
+
+#+BEGIN_EXAMPLE ipython
+txs_df = spark.read.csv('./spark-ejemplo/output/raw/transacciones/', header=False, sep='|')
+txs_df.printSchema()
+txs_df.show()
+#+END_EXAMPLE
+
+
+Nota como todas las columnas son de tipo =string=, definamos un =schema=
+
+#+BEGIN_EXAMPLE ipython
+from pyspark.sql.types import *
+
+schema = StructType([
+    StructField("tdc", StringType(), True),
+    StructField("comercio", StringType(), True),
+    StructField("accion", StringType(), True),
+    StructField("monto", IntegerType(), True)])
+
+txs_df = spark.read.csv("./spark-ejemplo/output/raw/transacciones/", schema=schema, sep='|')
+txs_df.printSchema()
+txs_df.take(5)
+#+END_EXAMPLE
+
+* Ejemplo (II/IV)
+
+Podemos guardarlo en una tabla temporal
+
+#+BEGIN_EXAMPLE ipython
+txs_df.registerTempTable('txs')
+spark.sql('show tables').show()
+spark.sql('select * from txs limit 5').show()
+#+END_EXAMPLE
+
+O podemos guardarlo con esquema:
+
+#+BEGIN_EXAMPLE ipython
+txs_df.write.json("./spark-ejemplo//output/json/transacciones", mode="overwrite")
+txs_df.write.parquet("./spark-ejemplo/output/parquet/transacciones", mode="overwrite")
+#+END_EXAMPLE
+
+* Ejemplo (III/IV)
+
+Al igual que los =RDD=s, los =DataFrames= pueden ser operados mediante
+/transformaciones/ y /acciones/. Las **Transformaciones** son /lazy/ pero
+contribuyen a la planeación de la ejecución del /query/, las *Acciones*
+provocan la ejecución del /query/ 
+
+#+BEGIN_EXAMPLE ipython
+
+## Leamos de nuevo desde disco
+txs_df = spark.read.load("./spark-ejemplo/output/parquet/transacciones/")
+txs_df.select(txs_df['tdc'], txs_df['accion'], txs_df['monto'], txs_df['monto'] >= 5000).show(5)
+spark.sql("select tdc, accion, monto, monto >= 5000 from txs").show(5)
+txs_df.filter((txs_df["monto"] >= 5000) & (txs_df["accion"] == "RETIRO"))\
+      .select(txs_df["tdc"], txs_df["comercio"], txs_df["monto"])\
+      .orderBy(txs_df["monto"].desc())\
+      .show(5)
+txs_df.where((txs_df["monto"] >= 5000) & (txs_df["accion"] == "RETIRO"))\
+      .select(txs_df["tdc"], txs_df["comercio"], txs_df["monto"])\
+      .show(5)
+
+## También es posible usar `strings` para el condicional
+txs_df.filter("monto >= 5000 and accion = 'RETIRO'")\
+      .select(txs_df["tdc"], txs_df["comercio"], txs_df["monto"])\
+      .orderBy(txs_df["monto"].asc())\
+      .show(5)
+txs_df.groupBy("tdc").count().show(5)
+#+END_EXAMPLE
+
+* Ejemplo (IV/IV)
+
+Supongamos que queremos mostrar el  =tdc= en mayúsculas, para tal menester es
+necesario definir una =UDF= (/User Defined Function/) 
+
+#+BEGIN_EXAMPLE ipython
+from pyspark.sql.functions import udf
+to_upper = udf(lambda s: s.upper())
+txs_df.select(to_upper(txs_df["tdc"]).alias("Mayúsculas"), txs_df["tdc"])\
+      .distinct()\
+      .show(100)
+#+END_EXAMPLE
+
+Imaginemos que sólo estamos interesados en aquellas transacciones que fueron
+=RETIRO=  en el =SUPERCITO= por montos mayores a =9000= ya que resultan
+sospechosas. 
+
+
+#+BEGIN_EXAMPLE ipython
+txs_sospechosas = txs_df.filter("monto >= 9000 and accion = 'RETIRO' and comercio = 'SUPERCITO'")\
+      .select(txs_df["tdc"],  txs_df["monto"])\
+      .orderBy(txs_df["monto"].desc())
+
+txs_sospechosas.count()
+
+txs_sospechosas.write.parquet("./spark-ejemplo/output/parquet/transacciones_sospechosas", mode="overwrite")
+
+#+END_EXAMPLE
+
+
+* Otro ejemplo  (I/II)
+
+Podemos repetir el primer ejemplo  pero ahora usando los =Spark Datasets=
+
+#+BEGIN_EXAMPLE ipython
+parsed = spark.read.csv("./spark-ejemplo/data/linkage/")
+prev.show()
+prev = spark.read.csv("./spark-ejemplo/data/linkage/", header=True)
+prev.show()
+prev = spark.read.csv("./spark-ejemplo/data/linkage/", header=True, nullValue="?")
+prev.show()
+prev = spark.read.csv("./spark-ejemplo/data/linkage/", header=True, nullValue="?", inferSchema=True)
+prev.show()
+prev.printSchema()
+#+END_EXAMPLE
+
+* Otro Ejemplo (II/II)
+
+#+BEGIN_EXAMPLE ipython
+records.groupBy("is_match").count().orderBy("count", ascending=False).show()
+
+from pyspark.sql.functions import avg, stddev
+
+records.agg(avg("cmp_sex"), stddev("cmp_sex")).show()
+
+records.createOrReplaceTempView("linkage")  ## Registramos una tabla temporal
+
+spark.sql("""
+select is_match, count(*) as cnt
+from linkage
+group by is_match
+order by cnt desc
+""").show()
+
+#+END_EXAMPLE
+
+* ¿Spark Dataset o RDD?
+
+- Hay ocasiones donde lo más sencillo sigue siendo usar =RDD=, por ejemplo:
+  - si tus datos están sin estructurar
+  - si quieres manipular los datos funcionalmente
+
+- Pero muchas personas están acostumbradas a pensar en términos de =SQL= o /Data
+  flow/ (como =dplyr= en =R= o =pig=)
+
+- Es preferible usar  =DataFrames= cuando:
+  - quieres una abstracción rica con mucha semántica
+  - quieres utilizar los beneficios de =Catalyst=
+  - eres usuario de =R= o =python=
+
+- Por otro lado los DataFrames están muy optimizados en espacio en memoria (en un ejemplo posterior,
+  el =DF= pesará 120 Mb a lo largo del cluster, en cambio el mismo problema en
+  =RDD= tendría un peso de casi 1 Gb) o en cómputo (debido al optimizador =Catalyst=)
+
+
+* ¿Spark SQL o Spark Dataset?
+
+
+- =SQL=
+
+  - Lo conoce casi todo el mundo
+  - Muy expresivo para /queries/ simples
+  - Explota muy bien la lectura y filtrado de archivos columnares (=parquet= u
+    =ORC=)
+
+- =Dataset=
+  
+  - Excelente para expresar análisis complejos y multipasos
+
+
+* Pequeño repaso (I/III)
+
+- ¿Qué es Spark?
+- ¿Qué lenguajes soporta?
+- ¿Por qué Spark?
+- ¿Cuáles son las 4 cosas en la plataforma de Spark?
+- ¿Cuál es su modelo de ejecución?
+- ¿Cuál es la diferencia fundamental entre la ejecución normal y la via pyspark?
+- ¿Qué es un spark RDD?
+- ¿Cuáles son las ventajas de Spark RDD?
+- ¿Qué operaciones hay?
+
+* Pequeño repaso (II/III)
+
+- ¿Cuál es la diferencia en el DAG entre transformaciones y acciones?
+- ¿Cuál es la diferencia en ejecución?
+- ¿Cuál es la diferencia entre operaciones Narrow vs. Wide?
+- ¿Cuál es la diferencia entre un Spark Dataset y un Spark RDD?
+- ¿Cuál es mejor?
+
+* Pequeño repaso (III/III)
+
+Para prender el ipython...
+
+1. Checo que mis workers esten prendidos
+
+#+BEGIN_EXAMPLE shell 
+docker-compose -p bbva ps
+#+END_EXAMPLE
+
+Si no están prendidos, los prendo
+
+#+BEGIN_EXAMPLE shell 
+docker-compose -p bbva up -d
+#+END_EXAMPLE
+
+Nota que si no estaba en la carpeta del módulo, entonces esto me marca un error.
+
+2. Me *meto* (prendo el docker). Más correctamente *inicializo el driver*
+
+#+BEGIN_EXAMPLE shell 
+docker start -i -a bbva_driver
+#+END_EXAMPLE
+
+3. Me voy al root (ahí vive la carpeta *spark-ejemplo*
+
+#+BEGIN_EXAMPLE shell 
+cd /
+#+END_EXAMPLE
+
+
+4. Prendo *ipython*
+
+#+BEGIN_EXAMPLE shell 
+PYSPARK_DRIVER_PYTHON=/usr/local/bin/ipython pyspark --master spark://master:7077
+#+END_EXAMPLE
+
+5. Abre chrome o firefox y pon la dirección: 0.0.0.0/8080
+
+
+* Ejercicio: Berka (I/V)
+
+Descripción de las tablas [[http://lisp.vse.cz/pkdd99/Challenge/berka.htm][aquí]]
+
+#+BEGIN_QUOTE
+The data about the clients and their accounts consist of following relations:
+
+    - relation account (4500 objects in the file ACCOUNT.ASC) 
+      - each record describes static characteristics of an account,
+    - relation client (5369 objects in the file CLIENT.ASC) 
+      - each record describes characteristics of a client,
+    - relation disposition (5369 objects in the file DISP.ASC) 
+      - each record relates together a client with an account i.e. this relation
+        describes the rights of clients to operate accounts, 
+    - relation permanent order (6471 objects in the file ORDER.ASC) 
+      - each record describes characteristics of a payment order,
+    - relation transaction (1056320 objects in the file TRANS.ASC) 
+      - each record describes one transaction on an account,
+    - relation loan (682 objects in the file LOAN.ASC) 
+      - each record describes a loan granted for a given account,
+    - relation credit card (892 objects in the file CARD.ASC) 
+      - each record describes a credit card issued to an account,
+    - relation demographic data (77 objects in the file DISTRICT.ASC) 
+      - each record describes demographic characteristics of a district.
+#+END_QUOTE
+
+
+
+
+* Ejercicio: Berka (II/V)
+
+Descripción del dataset:
+
+#+BEGIN_QUOTE
+Each account has both static characteristics (e.g. date of creation, address of
+the branch) given in relation "account" and dynamic characteristics (e.g.
+payments debited or credited, balances) given in relations "permanent order" and
+"transaction". Relation "client" describes characteristics of persons who can
+manipulate with the accounts. One client can have more accounts, more clients
+can manipulate with single account; clients and accounts are related together in
+relation "disposition". Relations "loan" and "credit card" describe some
+services which the bank offers to its clients; more credit cards can be issued
+to an account, at most one loan can be granted for an account. Relation
+"demographic data" gives some publicly available information about the districts
+(e.g. the unemployment rate); additional information about the clients can be
+deduced from this. 
+#+END_QUOTE
+
+Tomado de [[http://lisp.vse.cz/pkdd99/Challenge/berka.htm][aquí]]
+
+* Ejercicio: Berka (III/V)
+  
+#+ATTR_ORG: :width 600px :height 600px
+#+ATTR_HTML: :width 800px :height 600px
+#+ATTR_LATEX: :height 150px :width 200px
+[[./imagenes/berka_data.gif]]
+
+
+* Ejercicio: Berka (IV/V)
+
+    - Lee los archivos y colocalos en diferentes DF
+    - Limpia el campo =birth_number= de =clients=
+      - Cuatro campos: =year=, =month=, =day=, =sex=
+      - *HINT*: utiliza 4 =udf= y =withColumn=
+
+#+BEGIN_EXAMPLE ipython
+## Puedes registrar también los udf's para ser usados en SQL 
+spark.udf.register("get_sex", get_sex)
+spark.udf.register("get_month", get_month)
+
+## Luego usarlo dentro del query
+spark.sql("select birth_number, get_sex(birth_number) as sex, get_month(birth_number) as month from clients").show()
+#+END_EXAMPLE
+
+    - Revisa bien la imagen arriba ¿Puedes imaginar tener una sola fuente de datos?
+    - Coloca cada DF en una tabla temporal
+    - Realiza queries para ver que todo esté bien cargado.
+    - Une las tablas en una nueva usando SQL 
+    - Guarda la tabla final como parquet.
+
+
+* Ejercicio: Berka (V/V)
+  
+**  Avanzado
+- Acomoda los archivos como si fueran objetos en un =hdfs=
+- Repite el ejercicio usando =StructType= para definir esquemas al leer los
+  archivos.
+- En este esquema, limpia los nombres de las columnas.
+- Registra los udf's que creaste para ser utilizadas desde =sql=
+- Crea un diccionario de checo a inglés (ve las tablas en la liga dada), crea
+  una función para traducir los campos usando ese diccionario.
+- Unifica las tablas usando la =API= de DF 
+  - *HINT* usa =join=
+- Guarda como =parquet=, usando =ovewrite=
+
+* COMMENT Settings
+# Local Variables:
+# org-babel-sh-command: "/bin/bash"
+# org-confirm-babel-evaluate: nil
+# org-export-babel-evaluate: nil
+# ispell-check-comments: exclusive
+# ispell-local-dictionary: "spanish"
+# End:
+
+

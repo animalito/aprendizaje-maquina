@@ -1,0 +1,1523 @@
+#+Title:     IX Ciencia de datos avanzada: Spark ML
+#+Author:    Adolfo De Unánue
+#+Email:     adolfo.deunanue@itam.mx
+#+DATE:      2017
+#+DESCRIPTION: 
+#+KEYWORDS:  
+#+LANGUAGE:  en
+
+#+STARTUP: beamer
+#+STARUP: oddeven
+
+#+LaTeX_CLASS: beamer
+#+LaTeX_CLASS_OPTIONS: [presentation, smaller]
+
+#+BEAMER_THEME: DarkConsole
+
+#+OPTIONS: H:1 toc:nil 
+#+OPTIONS: tex:t
+
+#+SELECT_TAGS: export
+#+EXCLUDE_TAGS: noexport
+
+#+COLUMNS: %20ITEM %13BEAMER_env(Env) %6BEAMER_envargs(Args) %4BEAMER_col(Col) %7BEAMER_extra(Extra)
+
+
+* Spark ML
+
+
+- Apareció en Spark 1.2
+  – =spark.ml=
+- Su objetivo es estandarizar una API para algoritmos de aprendizaje de máquina,
+  de tal manera que sea más fácil combinarlos en un pipeline o workflow.
+- Usa Spark Datasets
+  - IMPORTANTE:  spark.mlib usa RDDs, spark.ml usa Datasets.
+  – No veremos spark.mlib
+
+* Spark ML
+
+- ¿Por qué este enfoque?
+-  Mucho algoritmos de ML tienen la forma siguiente:
+  – Minimizar: $f(x) +g(z)$
+  – Sujeto a: $Ax + Bz = c$
+  – $f$ es una /loss function/ y $g$ es un término de regularización.
+- Para más detalles ver:
+  - Alternating Direction Method of Multipliers, Boyd et al
+  - https://stanford.edu/class/ee364b/lectures/admm_slides.pdf
+  - http://www.datascienceassn.org/sites/default/files/Distributed%20Optimization%20and%20Statistical%20Learning%20via%20the%20Alternating%20Direction%20Method%20of%20Multipliers.pdf
+
+
+* ML workflow
+
+- Ingestar datos
+- /Feature extraction/
+- Entrenar el modelo
+- Predicción / Inferencia
+
+#+BEGIN_SRC ditaa :file ./imagenes/ml_simplified_flow.png
+
++----------------+    +--------------------+    +----------------+    +----------------+
+|                |    |                    |    |                |    |                |
+| Data Ingestion |--->| Feature extraction |--->|  Training      |--->| Prediction or  |
+|                |    |                    |    |    models      |    |    Inference   |
+|                |    |                    |    |                |    |                |
++----------------+    +--------------------+    +----------------+    +----------------+
+
+#+END_SRC
+
+#+RESULTS:
+[[file:./imagenes/ml_simplified_flow.png]]
+
+* Spark ML: Transformers
+
+- Es un algoritmo que transforma un Dataset en otro Dataset, generalmente
+  agregando una o más columnas. 
+- Su método más importante es =transform()=
+- Incluye los /features transformers/ (=pyspark.ml.feature=) y los /learning
+  models/ (=pyspark.ml.classification=, =pyspark.ml.clustering=,
+  =pyspark.ml.recommendation=, =pyspark.ml.regression=).
+
+* Spark ML: Transformers
+
+- /Feature Transformer/
+  - Toma un dataset
+  - Lee una columna
+  - La convierte en una nueva columna de features y la agrega al dataset
+  - Devuelve un dataset nuevo
+
+- /Learning Model/
+  - Toma un dataset
+  - Lee una columna que contiene los features
+  - Predice las etiquetas para cada vector de features
+  - Agrega esa columna de etiquetas
+  - Devuelve un dataset nuevo
+
+* Spark ML: Estimadores
+
+- Es un algoritmo que puede ser ajustado en un Dataset para producir un Transformer.
+- Un algoritmo de aprendizaje de máquina es un Estimator que entrena en el
+  dataset para obtener un modelo.
+- Implementan el método =fit()= y regresan un =Transformador= (el modelo).
+- La regresión logística es un Estimator e invocando =fit()= entrena un modelo de
+  regresión logística que es un Transformer.
+
+* Spark ML: Pipeline
+
+- En aprendizaje de máquina, es común ejecutar los algoritmos en una secuencia
+  para procesar y aprender de los datos.
+
+- Spark ML abstrae este workflow en un Pipeline, el cual consiste en una secuencia de Transformers y Estimators.
+
+- Esto es diferente al /pipeline/ de =Luigi=
+
+- El Pipeline va a estar formado por Estimadores y Transformadores, que son
+  ejecutados en orden, y el dataset será alterado durante su paso por el Pipeline.
+
+- Si la etapa (/stage/) es un Transformador se ejecuta el método =transform()=,
+  si es un Estimador se ejecuta el método =fit()= , que crea a su vez un
+  Transformador que ahora formará parte del Pipeline.
+
+* Spark ML: Pipeline
+
+#+ATTR_ORG: :width 600px :height 600px
+#+ATTR_HTML: :width 800px :height 600px
+#+ATTR_LATEX: :height 150px :width 200px
+[[./imagenes/spark-ml-1.png]]
+
+* Spark ML: Pipeline
+
+#+ATTR_ORG: :width 600px :height 600px
+#+ATTR_HTML: :width 800px :height 600px
+#+ATTR_LATEX: :height 150px :width 200px
+[[./imagenes/spark-ml-2.png]]
+
+
+* Spark ML
+
+- Queremos usar datos para encontrar el mejor modelo o parámetros para una tarea
+  dada
+- Podemos usar un sólo estimador o un pipeline completo
+  - =Estimator= (Algoritmo a usar)
+  - =ParamMap= (Parámetros a ajustar)
+  - =Evaluator= (Métrica a usar)
+- Podemos usar *CrossValidation* (lento y confiable) o =TrainValidationSplit=
+  (rápido, menos confiable)
+  
+
+* Ejemplo (I/IV)|
+
+*NOTA*: El siguiente ejemplo es sólo para mostrar como usar los transformadores y
+modelos en =spark ml=, *NO* es un ejemplo de un excelente (o buen) modelo 
+
+*QUESTION*: Como ejercicio, verifica si puedes identificar errores en el modelado
+
+*HINT*: Pon atención al /information leakeage/, a la métrica  y al número de instancias por categoría
+
+
+Los datos están en esta [[https://www.dropbox.com/sh/esin63n51nuiob9/AAAjaY-g6ZFdHESGf3n9TF2aa?dl=0][liga]], copialos a =spark-ejemplo/data=
+
+
+#+BEGIN_EXAMPLE ipython
+from pyspark.sql.types import *   # Importamos los tipos de datos para definir el esquema
+
+## El dataset sólo tiene dos columnas, el mensaje SMS (texto) 
+## y una etiqueta que indica si fué spam o no 
+spam_schema = StructType([
+                         StructField("spam", StringType(), True), 
+                         StructField("message", StringType(), True)
+              ])
+
+
+ds = spark.read.csv("/spark-ejemplo/data/SMSSpamCollection.tsv", sep="\t", schema=spam_schema)
+ds.show()
+ds.show(truncate=False)
+ds.printSchema()
+#+END_EXAMPLE
+
+* Ejemplo (II/IV)
+
+En este ejemplo no usaremos un =Pipeline=, pero si los transformadores. El plan
+es:
+
+- Convertir  la columna =spam= que es texto en una variable categórica, para
+  esto usaremos =StringIndexer=
+
+- Luego generaremos /tokens/ a partir del mensaje (=Tokenizer=), calcularemos frecuencia de
+  términos usando el /hashing trick/ (=HashingTF=) ,
+  acto seguido , la frecuencia inversa de documentos (=IDF=) y todo esto lo
+  pondremos en un vector (=VectorAssembler=)
+
+- Por último entrenaremos un modelo de regresión logística
+  (=LogisticRegression=) y evaluaremos el resultado.
+
+* Ejemplo (III/IV)
+
+#+BEGIN_EXAMPLE ipython
+from pyspark.ml.feature import StringIndexer
+indexer = StringIndexer(inputCol="spam", outputCol="label")
+indexed = indexer.fit(ds).transform(ds)
+indexed.show()
+
+from pyspark.ml.feature import Tokenizer
+tokenizer = Tokenizer(inputCol="message", outputCol="tokens")
+tokenized = tokenizer.transform(indexed)
+tokenized.show()
+
+from pyspark.ml.feature import HashingTF, IDF, VectorAssembler
+hashingTF = HashingTF(inputCol="tokens", outputCol="tf")
+tf_data = hashingTF.transform(tokenized)
+tf_data.show()
+
+idf = IDF(inputCol="tf", outputCol="idf")
+idfModel = idf.fit(tf_data)
+idf_data = idfModel.transform(tf_data)
+idf_data.show()
+
+assembler = VectorAssembler(inputCols=["idf"], outputCol="features")
+assembled_data = assembler.transform(idf_data)
+assembled_data.show()
+
+#+END_EXAMPLE
+
+* Ejemplo (IV/IV)
+
+#+BEGIN_EXAMPLE ipython
+
+## Esto no habría que hacerlo, deberíamos usar una especie de magic loop, cross-validation, etc
+training_data, test_data = assembled_data.randomSplit(weights=[0.7, 0.3], seed=12345)
+
+from pyspark.ml.classification import LogisticRegression
+lr = LogisticRegression(labelCol="label", featuresCol="features")
+lrModel = lr.fit(training_data)
+
+predict = lrModel.transform(test_data)
+predict.select("spam", "probability", "prediction", "label").show(truncate=False)
+
+from pyspark.ml.evaluation import BinaryClassificationEvaluator
+evaluator = BinaryClassificationEvaluator().setRawPredictionCol("prediction")
+accuracy = evaluator.evaluate(predict)
+
+"Test error: {}".format(1.0 - accuracy)
+
+#+END_EXAMPLE
+
+
+* Ejemplo: No supervisado (I/II)
+
+Este es otro ejemplo de juguete, ahora con =KMeans= y usando la mítica base de
+=mtcars=.
+
+*NOTA*: Muchas personas piensan que *K-means* es un algoritmo que siempre da
+resultados, si perteneces a ese grupo, revisa este excelente /blog/:  [[http://varianceexplained.org/r/kmeans-free-lunch/][/K-means clustering is not a free lunch/]].
+
+*QUESTION* ¿Este /dataset/ cumple con los requisitos que /K-means/?
+
+#+BEGIN_EXAMPLE ipython
+ds = spark.read.csv("./spark-ejemplo/data/mtcars.csv", header=True, nullValue="?", inferSchema=True)
+ds.printSchema()
+ds.count()
+ds.show()
+
+assembler = VectorAssembler(inputCols=["mpg", "cyl", "disp", "drat", "wt"], outputCol="features")
+assem_data = assembler.transform(ds)
+
+from pyspark.ml.feature import StandardScaler
+
+scaler = StandardScaler(inputCol="features", outputCol="scaled_features", withStd=True, withMean=True)
+scaler_model = scaler.fit(assem_data)
+scaled_data = scaler_model.transform(assem_data)
+scaled_data.show()
+
+#+END_EXAMPLE
+
+* Ejemplo: No supervisado (II/II)
+
+#+BEGIN_EXAMPLE ipython
+clusters = 10
+
+from pyspark.ml.clustering import KMeans
+
+## Puedes utiliizar también métodos para pasar los hiper-parámetros
+kmeans = KMeans()\
+         .setK(clusters)\
+         .setMaxIter(1000)\
+         .setFeaturesCol("scaled_features")\
+         .setPredictionCol("prediction")
+
+model = kmeans.fit(scaled_data)
+## Calculamos la distancia de los puntos a su centro más cercano
+## Entre más pequeño
+wssse = model.computeCost(scaled_data)
+
+## Imprimimos los centros de los clusters
+for center in model.clusterCenters():
+    print(center)
+
+predict = model.transform(scaled_data)
+predict.show()
+predict.show(1000)
+
+print("="*15)
+
+from pyspark.sql.functions import col
+
+for i in range(clusters):
+    predictionPerCol = predict.filter(col("prediction") == i)
+    print("cluster {}".format(i))
+    for c in predictionPerCol.select(col("brand"), col("features"), col("prediction")).collect():
+        print(c)
+    print("="*15)
+
+#+END_EXAMPLE
+
+
+* Ejemplo: Churn (I/III)
+
+Ahora un ejemplo con un problema de /marketing/: *Churn*
+
+#+BEGIN_EXAMPLE ipython
+from pyspark.sql.types import *
+
+  schema = StructType([
+      StructField("state", StringType(), True),
+      StructField("account_length", DoubleType(), True),
+      StructField("area_code", StringType(), True),
+      StructField("phone_number", StringType(), True),
+      StructField("intl_plan", StringType(), True),
+      StructField("voice_mail_plan", StringType(), True),
+      StructField("number_vmail_messages", DoubleType(), True),
+      StructField("total_day_minutes", DoubleType(), True),
+      StructField("total_day_calls", DoubleType(), True),
+      StructField("total_day_charge", DoubleType(), True),
+      StructField("total_eve_minutes", DoubleType(), True),
+      StructField("total_eve_calls", DoubleType(), True),
+      StructField("total_eve_charge", DoubleType(), True),
+      StructField("total_night_minutes", DoubleType(), True),
+      StructField("total_night_calls", DoubleType(), True),
+      StructField("total_night_charge", DoubleType(), True),
+      StructField("total_intl_minutes", DoubleType(), True),
+      StructField("total_intl_calls", DoubleType(), True),
+      StructField("total_intl_charge", DoubleType(), True),
+      StructField("number_customer_service_calls", DoubleType(), True),
+      StructField("churned", StringType(), True)
+  ])
+
+  ds = spark.read.csv("./spark-ejemplo/data/churn.all", schema=schema)
+
+  ds.printSchema()
+#+END_EXAMPLE
+
+* Ejemplo: Churn (Intermezzo)
+
+- Vuelve a ver las variables que tenemos y piensa en las siguientes preguntas:
+
+1. Si este /dataset/ te fué dado ¿Cómo interpretarías las variables =total_xxx=?
+   ¿Tienen algún /time frame/?
+1. ¿Cómo obtendrías esas variables en producción?
+2. ¿Desde dónde debería empezar el /pipeline/ para entrenamiento?
+3. ¿Y en producción?
+4. ¿Cómo te imaginas que este modelo sería usado: /online/ u /offline/?
+5. ¿Qué métrica usarías en ambos casos?
+
+* Ejemplo: Churn (II/III)
+
+#+BEGIN_EXAMPLE ipython
+
+  from pyspark.ml.feature import StringIndexer
+  indexer = StringIndexer(inputCol="intl_plan", outputCol="intl_plan_idx")
+  indexed = indexer.fit(ds).transform(ds)
+
+  churn = StringIndexer(inputCol="churned", outputCol="churned_idx")
+  churned = churn.fit(indexed).transform(indexed)
+
+  churned.printSchema()
+
+  from pyspark.ml.feature import VectorAssembler
+  assembler = VectorAssembler(inputCols=["account_length","intl_plan_idx", "number_vmail_messages", "total_day_minutes",
+                                         "total_day_calls", "total_day_charge", "total_eve_minutes", "total_eve_calls",
+                                         "total_night_minutes", "total_night_calls", "total_night_charge", "total_intl_minutes",
+                                         "total_intl_calls", "total_intl_charge", "number_customer_service_calls"], outputCol="features")
+  assem_data = assembler.transform(churned)
+
+  assem_data.printSchema()
+
+#+END_EXAMPLE
+
+
+
+* Ejemplo: Churn (III/III)
+
+#+BEGIN_EXAMPLE ipython
+
+  training, test = assem_data.randomSplit([0.7, 0.3], 12345)
+
+  from pyspark.ml.classification import RandomForestClassifier
+
+  rf = RandomForestClassifier(labelCol="churned_idx", featuresCol="features", numTrees=10)
+  rf_model = rf.fit(training)
+
+  predict = rf_model.transform(test)
+
+  predict.select("churned", "prediction").show()
+
+  from pyspark.ml.evaluation import BinaryClassificationEvaluator
+  evaluator = BinaryClassificationEvaluator(labelCol="churned_idx", rawPredictionCol="prediction")
+
+  accuracy = evaluator.evaluate(predict)
+
+  print(1.0 - accuracy)
+
+#+END_EXAMPLE
+
+
+* Ejemplo: Regresión con Pipeline y CV (I/V)
+
+
+*QUESTION*: ¿Cómo usarías este modelo en una empresa? ¿Qué utilidad le verías?
+*QUESTION*: ¿Qué métrica usarías?
+*QUESTION*: ¿Sería /online/ u /offline/? 
+
+#+BEGIN_EXAMPLE ipython
+  housing = spark.read.csv("./spark-ejemplo/data/Housing.csv")
+  housing.show()
+
+  from pyspark.sql.types import *
+
+  ## Como siempre, definimos el esquema
+  housing_schema = StructType([StructField("id", StringType(), True),
+       StructField("price", DoubleType(), True), StructField("lotsize", DoubleType(), True), 
+       StructField("bedrooms", DoubleType(), True), StructField("bathrooms", DoubleType(), True),
+       StructField("stories", DoubleType(), True), StructField("driveway", StringType(), True),
+       StructField("recroom", StringType(), True), StructField("fullbase", StringType(), True),
+       StructField("gashw", StringType(), True), StructField("airco", StringType(), True),
+       StructField("garagepl", DoubleType(), True), StructField("prefarea", StringType(), True)])
+
+
+  housing = spark.read.csv("./spark-ejemplo/data/Housing.csv", schema=housing_schema)
+  housing.printSchema()
+  housing.show()
+#+END_EXAMPLE
+
+* Ejemplo: Regresión con Pipeline y CV (II/V)
+
+#+BEGIN_EXAMPLE ipython
+  ## Vamos a hacer un truco muy bonito para indexar y realizar one-hot-encoding en las variables categóricas
+  categorical_variables = ["driveway", "recroom", "fullbase", "gashw", "airco", "prefarea"]
+
+  from pyspark.ml.feature import StringIndexer
+  from pyspark.ml import Pipeline
+
+  indexers = [StringIndexer(inputCol=column, outputCol=column+"_index") for column in categorical_variables]
+
+  ## Lo agregamos al pipeline (al moemnto sólo tiene un paso)
+  pipeline = Pipeline(stages=indexers)
+  housing_r = pipeline.fit(housing).transform(housing)
+  housing_r.show()
+
+#+END_EXAMPLE
+
+* Ejemplo: Regresión con Pipeline y CV (III/V)
+
+#+BEGIN_EXAMPLE ipython
+  from pyspark.ml.feature import OneHotEncoder
+
+  one_hot_encoders = [OneHotEncoder(inputCol=column+"_index", outputCol=column+"_vec") for column in categorical_variables]
+
+  pipeline = Pipeline(stages=indexers+one_hot_encoders)
+  housing_r = pipeline.fit(housing).transform(housing)
+  housing_r.show()
+
+  from pyspark.ml.feature import VectorAssembler
+  assembler = VectorAssembler(inputCols=["lotsize", "bedrooms", "bathrooms",
+                                         "stories", "garagepl", "driveway_vec", "recroom_vec",
+                                         "fullbase_vec", "gashw_vec", "airco_vec", "prefarea_vec"],
+                               outputCol="features")
+  pipeline = Pipeline(stages=indexers+one_hot_encoders+[assembler])
+
+#+END_EXAMPLE
+
+
+
+* Ejemplo: Regresión con Pipeline y CV (IV/V)
+
+Los siguientes pasos del pipeline son el modelo y el ajuste de /hiperparámetros/
+
+#+BEGIN_EXAMPLE ipython
+  from pyspark.ml.regression import LinearRegression
+  from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
+
+  lr = LinearRegression()\
+       .setLabelCol("price")\
+       .setFeaturesCol("features")\
+       .setMaxIter(1000)\
+       .setSolver("l-bfgs")
+
+  paramGrid = ParamGridBuilder()\
+              .addGrid(lr.regParam, [0.1, 0.01, 0.001, 0.0001, 1.0])\
+              .addGrid(lr.fitIntercept, [False, True])\
+              .addGrid(lr.elasticNetParam, [0.0, 1.0]).build()
+
+  ## Nota como todos los pasos son necesarios para cada folding
+  pipeline = Pipeline(stages=indexers+one_hot_encoders+[assembler, lr])
+
+  from pyspark.ml.evaluation import RegressionEvaluator
+  cv = CrossValidator()\
+       .setEstimator(pipeline)\
+       .setEvaluator(RegressionEvaluator()\
+       .setLabelCol("price"))\
+       .setEstimatorParamMaps(paramGrid)\
+       .setNumFolds(5)
+#+END_EXAMPLE
+
+* Ejemplo: Regresión con Pipeline y CV (V/V)
+
+#+BEGIN_EXAMPLE ipython
+  training, test = housing.randomSplit([0.75, 0.25], seed=12345)
+
+  model = cv.fit(training)
+
+  from pyspark.sql import functions as F
+  from pyspark.sql.functions import col
+  from pyspark.sql.functions import abs
+
+  holdout = model.transform(test)\
+                 .select("prediction", "price")\
+                 .orderBy(abs(col("prediction")-col("price")))
+
+  holdout.show()
+
+  from pyspark.mllib.evaluation import RegressionMetrics
+
+  rm = RegressionMetrics(holdout.rdd.map(lambda x: (x[0], x[1])))
+  rm.rootMeanSquaredError
+  rm.r2
+#+END_EXAMPLE
+
+
+
+* Ejercicio (individual)
+
+- Toma la base de datos =linkage= y agrega 
+  - =Pipelines=
+  - =ParamGridBuilder=
+  - =CrossValidation=
+  - Guarda el mejor modelo 
+
+- Ponlos como =aplicaciones de spark=
+
+
+* Ejercicio (por equipos)
+
+- Transforma los ejercicios anteriores para que usen:
+  - =Pipelines=
+  - =ParamGridBuilder=
+  - =CrossValidation=
+  - Guarda el mejor modelo 
+
+- Ponlos como =aplicaciones de spark=
+
+- ¿Resultó mejor que lo que se hizo en los ejemplos?
+
+* Ejemplo: Tópicos con Bayes (I/II)
+
+#+BEGIN_EXAMPLE ipython
+?sc.wholeTextFiles
+raw_text_rdd = sc.wholeTextFiles("/spark-ejemplo/data/topicmodeling/newsgroup_20/")
+
+raw_text_rdd.first()
+raw_text_rdd.count()
+
+## Eliminamos el nombre del archivo
+raw_text_rdd = sc.wholeTextFiles("/spark-ejemplo/data/topicmodeling/newsgroup_20/").map(lambda x: x[1])
+raw_text_rdd.first()
+
+## Le agregamos un índice
+raw_text_rdd.zipWithIndex().first()
+raw_text_index = raw_text_rdd.zipWithIndex()
+
+## Ponemos en cache, las operación anteriores fueron costosas
+raw_text_index.cache()
+
+## Lo transformamos en un DF
+doc_df = raw_text_index.toDF(["text", "docId"])
+doc_df.cache()
+
+## Agregamos los stop words
+stop_words = sc.textFile("/spark-ejemplo/data/topicmodeling/stopwords.txt").collect()
+stop_words[20:24]
+#+END_EXAMPLE
+
+* Ejemplo: Tópicos con Bayes (Intermezzo)
+
+Primero unos conceptos generales: 
+
+- Minería de textos (en una de sus aproximaciones) utiliza el /Vector Space Model/
+  para representar un texto (1975):
+
+#+BEGIN_EXPORT latex
+d_j = (w_{1,j}, w_{2,j}, \ldots w_{t,j})
+#+END_EXPORT
+
+- /Bag-of-words/ (1954), del conjunto de documentos $D$ se crea un diccionario de
+  palabras, así cada documento $d_j$ es un vector cuyos elementos son la frecuencia
+  de palabras en el documento.
+
+- /Term frequency- Inverse Document Frequency/, *Tf-Idf*. Esta técnica mide la
+  importancia de las palabras en el texto, sea  $f_{ij}$ la frecuencia de la
+  palabra $i$ en el documento $j$, $TF(w,d) = f_{ij}/\max_k f_{kj}$. Si la palabra
+  $i$ aparece en $n$ de los documentos $D$ entondes $Idf(w, D) = \log_2(D/n)$.
+  Entonces el /score/ TF-Idf es 
+
+#+BEGIN_EXPORT latex
+Tf-Idf = TF(w,d) \times Idf(w,D)
+#+END_EXPORT
+
+
+Ahora si, vamos con *LDA*.
+
+* Ejemplo: Tópicos con Bayes (Intermezzo)
+
+*DISCLAIMER* Lo que sigue es una explicación sencilla de como funciona el *LDA*, no una
+explicación exhaustiva y rigurosa.
+
+
+* Ejemplo: Tópicos con Bayes (Intermezzo)
+
+#+BEGIN_SRC ditaa :file ./imagenes/lda.png
+
+
++------------------------+          +-----+     +---------------------+
+| cGRE                   |          |cYEL |  x  | cPNK                |
+|                        |          |     |     +---------------------+
+|  Doc-Term              |  --->    |     |         
+|      Matrix            |          |     |  
+|                        |          |     |
+|                        |          |     |
++------------------------+          +-----+
+                                  
+                                 Doc - Tópicos     Tópicos-Palabras
+      (DxV)                         (D x k)            (k x V)
+#+END_SRC
+
+#+RESULTS:
+[[file:./imagenes/lda.png]]
+
+
+* Ejemplo: Tópicos con Bayes (Intermezzo)
+
+- /Latent Dirichlet Allocation/, *LDA*, es un algoritmo para descubrir *tópicos*
+  en un conjunto de documentos. 
+
+- Cada documento será representado mediante una *mezcla de tópicos* (/mixture of
+  topics/) i.e. un proceso generativo de palabras con ciertas probabilidades.
+
+- El algoritmo *LDA* supone que la manera en la que generas los documentos es la
+  que sigue:
+
+  1. Decides el número $N$ de palabras que el documento tendrá (a partir de una distribución).
+
+  2. Escoges una mezcla de tópicos para el documento (por ejemplo a partir de
+     una distribución de Dirichlet sobre un conjunto $K$ de tópicos).
+
+  3. Generas las palabras (una por una) para el documento de la siguiente
+     manera:
+     a. Eliges el tópico (usando de nuevo la Dirichlet)
+     b. Usando ese tópico generas la palabra.
+
+- Entonces, *LDA* trata, a partir de los documentos encontrar los tópicos que
+  probablemente hayan creado el documento, suponiendo que usaste el
+  procedimiento anterior.
+
+
+* Ejemplo: Tópicos con Bayes (Intermezzo)
+
+- ¿Cómo aprende?
+
+Ahora empiezas con $D$ documentos, y decides que hay $K$ tópicos, aplicarás el
+algoritmo *LDA* para que aprenda la representación de tópicos de cada documento
+$d$.
+
+*NOTA*: Lo que sigue es /collapsed Gibbs sampling/
+
+
+1. Preparas el documento $d_i$ ## Inicialización
+2. A cada palabra $w_{j,i} le asignas al azar un probabilidad de pertenecer a uno de los
+   $K$ tópicos.
+3. Luego de hacerlo con todas las palabras y los documentos tienes la
+   representación (muy mala probablemente) de tópicos de los documentos.
+4. Para cada documento $d \in D$:  ## Actualización
+   a. Para cada palabra $w \in d$:
+   - Para cada tópico $t \in K$:
+     - Calcula $p(t | d)$ (proporción de palabras en $d$ que están en $t$)
+     - Calcula $p(w | t)$  (proporción de asignación del tópico $t$ sobre
+       todos los documentos que provienen de la palabra $w$)
+     - Reasigna $w$ a un nuevo tópico con probabilidad $p(t|d)*p(w|t)$, i.e. la
+       probabilidad de que el tópico $t$ haya generado la palabra $w$)
+
+5. Repites hasta que alcanzas un estado estable.
+
+* Ejemplo: Tópicos con Bayes (II/II)
+
+#+BEGIN_EXAMPLE ipython
+
+## nuestras transformaciones
+from pyspark.ml.feature import CountVectorizer, RegexTokenizer, StopWordsRemover
+
+num_of_topics = 10
+max_iterations = 100
+vocab_size = 10000
+
+tokenizer = RegexTokenizer(gaps=False,pattern="\\w+",minTokenLength=4,inputCol="text",outputCol="words")
+stop_words_remover = StopWordsRemover(stopWords=stop_words, caseSensitive=False,inputCol="words", outputCol="filtered")
+count_model = CountVectorizer(inputCol="filtered", outputCol="features", vocabSize=vocab_size)
+
+from pyspark.ml import Pipeline
+from pyspark.ml.clustering import LDA
+
+lda = LDA(optimizer="online", maxIter=max_iterations,k=num_of_topics)
+
+pipeline = Pipeline(stages=[tokenizer, stop_words_remover, count_model, lda])
+lda_model = pipeline.fit(doc_df.repartition(20))
+
+topic_indices = lda_model.stages[-1].describeTopics(maxTermsPerTopic=10).coalesce(1)
+vocabArray = lda_model.stages[-2].vocabulary
+
+topicos = topic_indices.collect()
+
+for topico in topicos:
+    print("Tópico #{0}".format(topico[0]))
+    words = [ vocabArray[idx] for idx in topico[1] ]
+    weights = topico[2]
+    for term, weight in zip(words, weights):
+        print(term, weight)
+    print("="*40)
+
+## Y la matriz doc-tópicos
+docs_topics = lda_model.transform(doc_df)
+docs_topics.show()
+#+END_EXAMPLE
+
+
+* Ejemplo: Tópicos con Bayes (Afterthoughts)
+
+- Teniendo la representación de tópicos del /corpora/ es posible hacer algunas
+  cosas más:
+
+  - Piensa en *LDA* como una técnica de reducción de dimensionalidad (ahora tus
+    documentos están en un espacio de dimensión $K$) lo cual podría servir para
+    usar algoritmos de  /clustering/ (como KNN).
+
+  - Puedes acomodar tus documentos en una representación de grafos que te
+    permita explorar por significado del documento.
+
+  - También para /feature selection/, estas dimensiones se pueden utilizar para
+    algoritmos predictivos.
+
+
+* Ejemplo: Sistemas de Recomendación
+
+** La idea principal es utilizar el histórico de elecciones de algunos /usuarios/
+sobre ciertos /items/, para recomendar a un usuario que /item/ seleccionar a continuación.
+** La suposición principal es que personas que seleccionaron los mismos /items/
+en el pasado, seguirán seleccionando igual en el futuro.
+*** Nota como no estamos usando ninguna otra característica de los usuarios o de
+los items.
+** Es importante notar que este histórico se puede colocar en una matriz en la
+que la mayoría de las elementos de la matriz no tienen valor, es decir, hay
+usuarios que no han seleccionado algunos items. 
+** Es decir, la matriz es /rala/ (/sparse/).
+
+* Ejemplo: Sistemas de Recomendación
+
+- Las matemáticas para resolver este problema están basadas (como otros
+  algoritmos de ML) en factorización de matrices.
+
+- Es decir, existen, un conjunto menor de factores latentes ($k$) que pueden ser
+  usados para predecir los elementos de la matriz faltantes.
+
+- Hay sistemas de recomendación *explícitos* y sistemas de recomendación
+  *implícitos*.
+  - Usuarios califican el item (como en amazon) / Usuarios ejecutan algo
+    (seleccionan algo)
+
+- Aquí nos concentraremos en los implícitos.
+
+#+BEGIN_SRC ditaa :file ./imagenes/matrix_factorization.png
+
+Low rank factorization
+
++------------------------+          +-----+     +---------------------+
+| cBLU                   |          |cGRE |  x  | cRED                |
+|                        |          |     |     +---------------------+
+|  Histórico de          |    ~     |     |         
+|       selecciones      |    ~     |     |  
+|                        |          |     |
+|                        |          |     |
++------------------------+          +-----+
+                                  
+                                    Usuarios            Items
+                                    (m x k)            (k x n)
+#+END_SRC
+
+#+RESULTS:
+[[file:./imagenes/matrix_factorization.png]]
+
+* Ejemplo: Sistemas de Recomendación
+
+- No podemos usar un método como *SVD* ya que la mayoría de nuestros elementos de
+  la matriz que representa el histórico son elementos faltantes.
+
+- El método que usaremos es *ALS* /Alternating Lest Squares/
+
+- Designaremos a los usuarios con $u$ o $v$ y a los /items/ con $i$ o $j$.
+
+- Los elementos de la matriz entonces son $r_{u,i}$, a estos los llamaremos
+  /observaciones/. Los usuarios serán representados por un vector $x_u$ y los
+  items mediante el vector $y_i$
+
+- Se plantea el problema como sigue: Queremos estimar el valor de $r_{u,i}$
+  mediante
+
+#+BEGIN_EXPORT latex
+\hat{r_{u,i}} \approx x_u^T y_i
+#+END_EXPORT
+
+* Ejemplo: Sistemas de Recomendación
+
+Formulando el problema como de optimización (y usando términos de
+regularización):
+
+#+BEGIN_EXPORT latex
+\min_{x,y} = \sum (r_{u,i} - x_u^T y_i)^2 + \lambda (\sum_u ||x_u||^2 + \sum_i ||y_i||^2)
+#+END_EXPORT
+
+Agrupemos los vectores de los usuarios en $X$ y los items en $Y$.
+
+Entonces (escogiendo un $Y$ al azar y por lo tanto fija):
+
+#+BEGIN_EXPORT latex
+x_u = (Y^T Y + \lambda I)^{-1}Y^T r_u
+#+END_EXPORT
+
+
+Y de la misma manera
+
+#+BEGIN_EXPORT latex
+y_i = (X^T X + \lambda I)^{-1} X^T r_i
+#+END_EXPORT
+
+Luego repetiremos estos pasos un número de veces (de ahí el nombre del
+algoritmo), hasta obtener la convergencia buscada.
+
+
+* Ejemplo: Sistema de Recomendación (I/VII)
+
+El algoritmo que usaremos para el sistema de recomendación es el algoritmo
+*ALS*.
+
+La base de datos es la de =Audioscrobbler=, está compuesta de tres archivos:
+
+- El número de veces que un usuario tocó una canción (=user_artist_data=)
+- El nombre del artista (=artist_data=)
+- El archivo de corrección de los datos del artista (=artist_alias=)
+
+*NOTA* Basado en /Advanced Analytics with Spark/ *O'Reilly*
+
+#+BEGIN_EXAMPLE ipython
+raw_user_artist_data = sc.textFile("./spark-ejemplo/data/recommendation/user_artist_data.txt")
+raw_user_artist_data.take(5)
+
+user_artist_df = raw_user_artist_data.map(lambda linea: linea.split(' ')).toDF(["user", "artist", "plays"])
+user_artist_df.show()
+#+END_EXAMPLE
+
+* Ejercicio
+
+- ¿Cuántas canciones escucharon los 5 usuarios más activos? ¿Cuántas los menos?
+- ¿Cuál es el /top/ 10 de artistas más tocado?¿El /bottom/? 
+  - usa sólo el =id=
+
+#+BEGIN_EXAMPLE ipython
+# Top y bottom de usuarios, estilo pyspark (Cortesia de: Fernando)
+from pyspark.sql.functions import *
+from pyspark.sql import functions as func
+
+user_artist_df.select("user","count").groupBy("user").agg(func.col("user"),func.sum("count")).sort(asc("sum(count)")).show(10)
+user_artist_df.select("user","count").groupBy("user").agg(func.col("user"),func.sum("count")).sort(desc("sum(count)")).show(10)
+
+# Top y bottom de artistas, estilo sql (Cortesia de: Rigo)
+
+from pyspark.sql.functions import *
+
+user_artist_df.registerTempTable('recomendacion') 
+spark.sql('show tables').show()
+
+spark.sql("select artist, sum(count) as cnt from recomendacion group by artist order by cnt desc").show(10)
+spark.sql("select artist, sum(count) as cnt from recomendacion group by artist order by cnt").show(10)
+#+END_EXAMPLE
+
+* Ejemplo: Sistema de Recomendación (II/VII)
+
+#+BEGIN_EXAMPLE ipython
+raw_artist_data = sc.textFile("./spark-ejemplo/data/recommendation/artist_data.txt")
+
+## Esta línea va a explotar, ya que map() debe de devolver siempre una línea 
+## Y en nuestra base hay líneas corruptas que no devuelven nada por una excepción (porque acaban con un espacio)
+## Map no puede recibir dos renglones: recibe un renglón y te devuelve un renglón
+raw_artist_data.map(lambda linea: linea.split('\t', maxsplit=1)).toDF().show(10000)
+
+
+## Habrá que ser más inteligentes
+def parse_artist_data(linea):
+    resultado = linea.split('\t', maxsplit=1)
+    if len(resultado) != 2:
+        return []
+    else:
+        try:
+            return [(int(resultado[0]), resultado[1].strip())]
+        except:
+            return []
+
+parse_artist_data('1134999\t06Crazy Life')
+parse_artist_data('1134999\tKassierer - Musik für beide Ohren')
+
+## flatMap "aplana" el dataset: flatmap regresa 0, 1 o más. Y así limpio el dataset para poder limpiar artist data
+artist_by_id = raw_artist_data.flatMap(lambda linea: parse_artist_data(linea)).toDF(["id", "artista"])
+artist_by_id.count()
+artist_by_id.show(1000)
+#+END_EXAMPLE
+
+* Ejercicioa
+
+- Ahora que tienes los nombres de los artistas, crea la lista de top y bottom de
+  manera correcta (es decir con nombre)
+
+- ¿Cuántos resultados están mal en el /dataset/?
+
+- Para el usuario más activo ¿Cuáles son sus cinco artistas favoritos?
+
+#+BEGIN_EXAMPLE ipython
+# Tenemos que hacer un join entre la tabla de user_artist y la tabla con los nombres de los artistas. 
+# Este join debe ser izquierdo
+# Con esto, verificamos que hacemos bien el join (mismo número de renglones en ambas tablas)
+user_artist_df.count()
+user_artist_df.join(artist_by_id, user_artist_df["artist"] == artist_by_id["id"], how = "left_outer").count()
+ua_joined = user_artist_df.join(artist_by_id, user_artist_df["artist"] == artist_by_id["id"], how = "left_outer")
+# AHora si, el ejercicio. Top y bottom de artistas con nombres de artistas.
+## Bottom
+ua_joined.select("artista","count").groupBy("artista").agg(func.col("artista"),func.sum("count")).sort(asc("sum(count)")).withColumnRenamed("sum(count)", "rep").take(5)
+## Top
+ua_joined.select("artista","count").groupBy("artista").agg(func.col("artista"),func.sum("count")).sort(desc("sum(count)")).withColumnRenamed("sum(count)", "rep").take(5)
+
+# ¿Cuantos resultados están mal en el dataset? 
+# Tomamos como "mal" la diferencia entre el count de un left join y un inner join
+rows_left = user_artist_df.join(artist_by_id, user_artist_df["artist"] == artist_by_id["id"], how = "left_outer").count()
+rows_inner = user_artist_df.join(artist_by_id, user_artist_df["artist"] == artist_by_id["id"], how = "inner").count()
+rows_left - rows_inner
+
+# Para el usuario más activo, ¿cuáles son sus cinco artistas favoritos?
+#+END_EXAMPLE
+
+Otro ejemplo de 1 y 2 (Cortesia de Fernando)
+
+#+BEGIN_EXAMPLE ipython
+#artistas escuchados con nombre
+user_artist_df.join(artist_by_id,artist_by_id.id == user_artist_df.artist,"left_outer").select("artista","count").groupBy("artista").agg(func.col("artista"),func.sum("count")).sort(asc("sum(count)")).show(10,truncate=False)
+user_artist_df.join(artist_by_id,artist_by_id.id == user_artist_df.artist,"left_outer").select("artista","count").groupBy("artista").agg(func.col("artista"),func.sum("count")).sort(desc("sum(count)")).show(10,truncate=False)
+
+
+#artistas "mal" (sin match en nombre)
+user_artist_df.join(artist_by_id,artist_by_id.id == user_artist_df.artist,"left_outer").filter("artista is NULL").count() 
+
+#+END_EXAMPLE
+
+
+Otro ejemplo de 1, 2 y 3 (Cortesia de Germán)
+
+#+BEGIN_EXAMPLE ipython
+###################
+###Top y bottom
+###################
+artist_by_id.registerTempTable('artist_by_id_rg')
+user_artist_df.registerTempTable('user_artist_df_rg')
+ 
+top=spark.sql('select b.artista, \
+            sum(a.count) as tot \
+            from user_artist_df_rg a \
+            inner join artist_by_id_rg b on a.artist=b.id \
+            group by b.artista \
+               order by sum(a.count) desc').limit(10)
+
+top.show()
+
+bottom=spark.sql('select b.artista, \
+            sum(a.count) as tot \
+            from user_artist_df_rg a \
+            inner join artist_by_id_rg b on a.artist=b.id \
+            group by b.artista \
+               order by sum(a.count) asc').limit(10)
+
+bottom.show()
+
+
+###############
+###Cuantos estan mal en la dataset
+###############
+
+
+mal=spark.sql('select count(a.count) as tot \
+            from user_artist_df_rg a \
+            left join artist_by_id_rg b on a.artist=b.id \
+            where b.id is null')
+
+mal.show()
+
+#####################
+###Usuario mas activo
+######################
+
+consulta= spark.sql('select user, \
+            sum(count) as tot \
+            from user_artist_df_rg \
+            group by user \
+               order by sum(count) desc').limit(1)
+
+consulta.registerTempTable('consulta_rg')
+
+mas_Activo=spark.sql('select b.artista, \
+            sum(a.count) as tot \
+            from user_artist_df_rg a \
+            inner join artist_by_id_rg b on a.artist=b.id \
+            inner join consulta_rg c on c.user=a.user \
+            group by b.artista \
+               order by sum(a.count) desc').limit(5)
+
+mas_Activo.show()
+
+
+#+END_EXAMPLE
+
+* Ejemplo: Sistema de Recomendación (II/VII)
+
+#+BEGIN_EXAMPLE ipython
+raw_artist_alias = sc.textFile("./spark-ejemplo/data/recommendation/artist_alias.txt")
+raw_artist_alias.take(10)
+
+## Hagamos el mismo truco que antes
+def parse_artist_alias(linea):
+    resultado = linea.split('\t', maxsplit=1)
+    if len(resultado) != 2:
+        return []
+    else:
+        try:
+            return [(int(resultado[0]), int(resultado[1]))]
+        except:
+            return []
+
+## Pero esta vez guardémoslo como un mapa 
+## Es pequeño y no queremos la carga de hacer selects o queries
+## No quiero hacer joins entonces hago un collect en donde tengo (artista verdadero, artista falso)
+artist_alias = raw_artist_alias.flatMap(lambda linea: parse_artist_alias(linea)).collectAsMap()
+
+from pyspark.sql.functions import col 
+artist_by_id.filter(col("id").isin({1208690, 1003926})).show()
+
+## Y hagámoslo una variable de broadcast
+broadcast_artist_alias = sc.broadcast(artist_alias)
+#+END_EXAMPLE
+
+
+* Ejemplo: Sistema de Recomendación (III/VII)
+
+Por último, hay que "limpiar" los nombres de los artistas usando =artist_alias=,
+será más fácil hacerlo si es un =RDD=, que si es un =DF=, entonces leámoslo de nuevo.
+
+#+BEGIN_EXAMPLE ipython
+# (nombre, id_artista, numero de plays)
+raw_user_artist_data = sc.textFile("./spark-ejemplo/data/recommendation/user_artist_data.txt")
+
+## Tomemos una muestra para probar la limpieza
+user_artist_data = raw_user_artist_data.takeSample(withReplacement=False, num=200, seed=12345)
+
+# Quito artistas incorrectos con el diccionario
+## La idea es simple,  si encontramos un artist_id en artist_alias
+## Lo cambiamos por el valor verdadero
+def fixing_artist_id(x):
+    user, artist, count = map(lambda lineItem: int(lineItem), x.split())
+    final_artist = artist_alias.get(artist)
+    if final_artist is None:
+        final_artist = artist
+    return (user, final_artist, count)
+
+## Verificamos que funciona (en un ejemplo, en el driver)
+for x in user_artist_data:
+    final_artist = artist_alias.get(list(map(lambda line: int(line), x.split()))[1])
+    if final_artist is not None:
+        print(x, final_artist)
+
+## Ajustemos la función para que funcione en el cluster (usando la función broadcasteada)
+from pyspark.sql import Row
+def fixing_artist_id(x):
+    user, artist, count = map(lambda lineItem: int(lineItem), x.split())
+    final_artist = broadcast_artist_alias.value.get(artist)
+    if final_artist is None:
+        final_artist = artist
+    return Row(user, final_artist, count)
+#+END_EXAMPLE
+
+* Ejemplo: Sistema de Recomendación (III/VII)
+
+Lo convertimos en un =DF=
+
+#+BEGIN_EXAMPLE ipython
+from pyspark.ml.recommendation import *
+from pyspark.sql.types import *
+from pyspark.sql import functions as F
+Rating = StructType([
+        StructField("user", IntegerType(), True),
+        StructField("artist", IntegerType(), True),
+        StructField("count", IntegerType(), True)
+])
+
+# Leo los datos limpios y los vuelvo un data.frame
+user_artist_df = spark.createDataFrame(raw_user_artist_data.map(lambda linea: fixing_artist_id(linea)), Rating)
+user_artist_df.show()
+
+## Usaremos todos los datos para el algoritmo
+user_artist_df.cache()
+#+END_EXAMPLE
+
+* Ejemplo: Sistema de Recomendación (IV/VII)
+
+Aplicamos el algoritmo *ALS* a los datos
+
+#+BEGIN_EXAMPLE ipython
+
+from pyspark.ml.recommendation import *
+model = ALS().setSeed(12345)\
+.setImplicitPrefs(True)\
+.setRank(10)\
+.setRegParam(0.01)\
+.setAlpha(1.0)\
+.setMaxIter(5)\
+.setUserCol("user")\
+.setItemCol("artist")\
+.setRatingCol("count")\
+.setPredictionCol("prediction")\
+.fit(user_artist_df)
+
+model.userFactors.show(1, truncate=False)
+
+model.save("./spark-ejemplo/output/modelos/recomendacion/sintuneo")
+#+END_EXAMPLE
+
+* Ejemplo: Sistema de Recomendación (V/VII)
+
+¿Qué tan bien salió?
+
+Tomemos cualquier usuario y primero veamos que escucha
+#+BEGIN_EXAMPLE ipython
+## Queremos una lista de lo que el usuario escuchó
+user_id = 2093760
+existing_artist_ids = user_artist_df.filter(user_artist_df.user == user_id).select("artist").rdd.flatMap(lambda x: x).collect()
+existing_artist_ids
+artist_by_id.where(col("id").isin(existing_artist_ids)).show()
+#+END_EXAMPLE
+
+* Ejemplo: Sistema de Recomendación (VI/VII)
+
+#+BEGIN_EXAMPLE ipython
+from pyspark.sql.functions import lit
+
+def make_recommendations(model, user, how_many):
+    to_recommend = model.itemFactors.select(col("id").alias("artist")).withColumn("user", lit(user))
+    return model.transform(to_recommend).select("artist", "prediction").orderBy(col("prediction").desc()).limit(how_many)
+
+make_recommendations(model, user_id, 5).show()
+
+top_recommendations = make_recommendations(model, user_id, 5)
+
+recommended_artists = top_recommendations.select("artist").rdd.flatMap(lambda x: x).collect()
+
+artist_by_id.filter(col("id").isin(recommended_artists)).show()
+#+END_EXAMPLE
+
+Mmmm, no se ve tan bien
+
+* Ejemplo: Sistema de Recomendación (VII/VII)
+
+#+BEGIN_EXAMPLE ipython
+
+model = ALS().setSeed(12345)\
+.setImplicitPrefs(True)\
+.setRank(30)\
+.setRegParam(4.0)\
+.setAlpha(40.0)\
+.setMaxIter(5)\
+.setUserCol("user")\
+.setItemCol("artist")\
+.setRatingCol("count")\
+.setPredictionCol("prediction")\
+.fit(user_artist_df)
+
+top_recommendations = make_recommendations(model, user_id, 5)
+recommended_artists = top_recommendations.select("artist").rdd.flatMap(lambda x: x).collect()
+artist_by_id.filter(col("id").isin(recommended_artists)).show()
+artist_by_id.where(col("id").isin(existing_artist_ids)).show()
+
+#+END_EXAMPLE
+
+* Ejercicio
+
+- ¿Cómo salen las recomendaciones para el usuario más activo? ¿Y para el menos
+  activo?
+- Crea un método que recomiende artistas a una lista de usuarios. Guarda esa
+  lista en disco ¿Qué formato usarías?
+- ¿Cómo evaluarías un modelo así para meterlo en un CV que escoja los mejores hiperparámetros?
+- Es posible recomendar /usuarios/ a /artistas/ (quizá para promociones), para
+  hacerlo hay que invertir en un lugar las columnas a la hora de leer los
+  dataset. Crea un nuevo modelo que recomiende usuarios a /Aerosmith/.
+
+
+* Persistencia en Spark ML
+
+Con todo lo que acabamos de ver, debería de ser obvio que un modelo es mucho más
+que una función $f(x)$, en realidad un modelo es un /pipeline/ complejo formado
+por 
+
+- Fuentes de datos
+- =Joins=
+- Creación y selección de /features/
+- Transformadores
+- Estimadores
+- Hiperparámetros y su selección
+
+A partir de ahora usaré modelo o /pipeline/ de manera intercambiable.
+
+
+* Persistencia en Spark ML
+
+En muchas empresas u organizaciones el flujo de modelado es el siguiente:
+
+1. El DS realiza un prototipo en =Python= o =R= y crea el modelo.
+2. El modelo se reimplementa para producción en =Java= por el equipo de
+   /software/
+3. El modelo se pone en producción (/is deployed/)
+
+¿Están imaginando todas las historias de terror que pueden ocurrir?
+
+
+* Persistencia en Spark ML
+
+En Spark ML el flujo es como sigue:
+
+1. El DS realiza un prototipo en =Python= o =R= y crea el modelo.
+2. El DS guarda (/persiste/) el modelo o /pipeline/ que realizó en =Python= o
+   =R=: =model.save("s3n://...")= 
+3. El equipo de /software engineering/ lee (/loads/) el modelo (en =Scala= o
+   =Java=): =Model.load("s3n://...")= (aquí =Model= es la clase)
+
+Por ejemplo, en el ejemplo de modelado de tópicos
+
+#+BEGIN_EXAMPLE ipython
+
+## Al finalizar entrenamiento...
+lda_model.save("./spark-ejemplo/lda_pipeline") ## Guarda un PipelineModel
+
+from pyspark.ml import PipelineModel
+
+## Al ponerlo en producción...
+lda_pipeline = PipelineModel.load("./spark-ejemplo/lda_pipeline") 
+
+#+END_EXAMPLE
+
+
+* Ejercicio
+
+- Modifica tus /aplicaciones de spark/ para guardar el mejor modelo entrenado.
+
+* Gobierno de modelos
+
+Hay restricciones en como el modelo debe de ser optimizado:
+- Métricas
+- Tiempo de respuesta
+- Cantidad de predicciones por unidad de tiempo
+- Facilidad de entrenamiento
+- /Reliability/
+- /Tech Stack/: =PMML=, =Java=, =C=, =Docker=, etc.
+- /offline/ (e.g. notificaciones, disparado por eventos, por calendario, etc.)  o /online/ (e.g.
+  fraude, recomendaciones, humanos esperando respuesta, etc.)
+- Tipo de salida: *yes/no*, /score/, /score con diferentes acciones/ (autorizar,
+  pregunta, mandar correo, comunicar con call center, denegar), /ranking/
+  de los top items recomendados, etc.
+
+* Gobierno de modelos
+
+Pero hay otras consideraciones que hay que tomar en cuenta en el gobierno de
+modelos
+
+- Frecuencia de actualización
+- Versionado 
+- Proceso de liberación del modelo
+- Proceso de actualización del modelo (¿Benchmark (/Shadow models/)? ¿Reruteo de tráfico en
+  un porcentaje? ¿Todo o nada?)
+- ¿A/B /testing/? ¿ /Multiarmed bandit/ ?
+
+* Gobierno de modelos
+
+** Monitoreo de modelos
+
+- Es el proceso de observar el /performance/ del modelo,
+  /loggear/ su comportamiento y alertar cuando el modelo degrade su actuación
+
+- Obviamente hay que guardar el /data input/ y la respuesta
+
+
+* Gobierno de modelos: ¿Qué debo de guardar?
+
+** Durante entrenamiento
+   - Pipeline
+   - Git hash (del código que crea el pipeline)
+   - Hiperparámetros usados (=ParamGrid=)
+   - Hiperparámetros elegidos
+   - Parámetros del pipeline ( e.g. Número de /folds/)
+   - Query usado para extraer los datos
+   - Seed
+   - Métricas usadas en /training/, /testing/ y /validation/ y su valor
+   - ID
+   - Fecha de entramiento
+   - ¿Quién lo entrenó?
+
+*NOTA*: Recuerda que esto debe de ser "quereable"
+
+
+* Gobierno de modelos: ¿Qué debo de guardar?
+
+
+** En producción (log)
+
+   - timestamp, id_trancción, $X$ (vector de entrada), modelo_id, $\hay{y}$ (vector de salida), $t$
+     (tiempo de ejecución), ¿dónde ejecutó?
+
+*NOTA* Esto lo utilizarás para "monitoreo" de modelos
+
+** En producción (retroalimentación)
+
+   - modelo_id, vectores de entrada, vectores de salida, resultado real, métrica
+     de ganancia
+
+
+*NOTA* Esto último lo usarás para comparar modelos on-line/off-line y
+on-line/on-line (esto último usando /Multi armed bandit/)
+
+* TODO Intermezzo: Monitoreo de modelos
+
+
+* Gobierno de modelos
+
+Consideraciones adicionales:
+
+- ¿Los modelos deben de ser transparentes, explicables, trazables,
+  interpretables? (Para auditorías o regulaciones)
+- ¿Los modelos deben de proveer la razón de su decisión?
+- Los modelos no pueden violar ninguna ley de discriminación o usar /features/
+  que puedan ser trazados a religión, género o etnicidad
+
+* Gobierno de modelos
+
+En resumen los modelos deben de ser gobernados por las políticas y procesos de
+las compañías, así como también por las leyes y regulaciones que apliquen a la
+organización, además de satisfacer las metas u objetivos de la misma.
+
+*NOTA* Lo cual implica que la organización debe de tener políticas y procesos
+para esto 
+
+* Decisiones arquitectónicas
+
+- Existen varias maneras de consumir estos modelos, todo dependerá del caso de
+  uso en el que se encuentren:
+  - Si van a predecir a nivel vector, el modelo tomará solo unos milisegundos en
+    responder.
+  - Si van a ejecutar predicciones sobre un conjunto de puntos:
+    - Ejecutar un =job= de spark para predecir en un data set y publicar los
+      resultados en otro lado (aproximadamente de ms a algunos segundos)
+    - Levantar un /cluster/ de spark (o un =SparkContext=, =SparkSession=) puede
+      llevar decenas de segundos (o minutos si es un Amazon EMR)
+
+* Lo más fácil: Modo batch
+
+1. Entrena tu modelo en un cluster de Spark (quizá haya que crear un /cluster/)
+2. Persiste el modelo
+3. Carga el modelo, aplica =transform= en un nuevo data set (quizá en otro /cluster/)
+4. Escribe los resultados
+
+Variantes:
+
+Si tienes datos temporales, quizá puedas estar entrenando modelos
+constantemente...
+
+
+* Intermedio: Como servicio
+
+1. Crea una aplicación de spark que esté ejecutándose todo el tiempo en un
+   /cluster/. El modelo ya está entrenado y "cargado" en la app.
+2. Los clientes mandan datos, el modelo predice y devuelve la predicción.
+
+Variantes:
+
+- /Spark Streaming/: Los datos se reciben desde Kafka, HDFS, S3, se predice y se
+  guardan en Kafka, Cassandra, Hive, etc. Ver la siguiente sección.
+- /Jobserver/: Un servicio REST es expuesto usando =Spark Jobserver=
+- /Spark Local Mode plus Streaming/Jobserver/: Usando =docker= con =spark
+  driver= ejecutando en modo local y teniendo un
+  balanceador de carga
+
+* Avanzado: Servicio predictivo sin Spark 
+
+- Reimplementar usando los parámetros del modelo (las betas de una regresión
+  lineal por ejemplo)
+- Usar =PMML=
+- Usar un ambiente que "simule" =Spark=. e.g.  [[https://github.com/combust/mleap/wiki/Serializing-a-Spark-ML-Pipeline-and-Scoring-with-MLeap][=MLeap=]]
+
+
+* Ejemplos de arquitecturas 
+
+** Recomendaciones /offline/
+
+#+BEGIN_SRC ditaa :file ./imagenes/arquitectura_1.png
+
++---------------+      +------------------------------------+      +--------------------------+       +-------------+
+|               |      |                                    |      | {s}                      |       |             |
+| Entrenar ALS  |----->| Guardar recomendaciones en un NoSQL|----->| Recomendaciones Rankeadas|------>| Web / Móbil |
+|               |      |                                    |      |                          |       |             |
++---------------+      +------------------------------------+      +--------------------------+       +-------------+
+      |
+      |
+      |
+      |                +-----------------------------+
+      |                |                             |
+      +--------------->|  Mandar ofertas a clientes  |
+                       |                             |
+                       +-----------------------------+
+#+END_SRC
+
+#+RESULTS:
+[[file:./imagenes/arquitectura_1.png]]
+
+
+* Ejemplos de arquitectura
+
+** /Features/ precomputados con /streaming/
+
+#+BEGIN_SRC ditaa :file ./imagenes/arquitectura_2.png
+
++---------------+     
+|               |     
+|   Data        |
+|               |     
++---------------+     
+       |
+       |
+       |
++---------------+      +--------------------+      +---------------------+         +-------------+
+|               |      | {s}                |      |  Ejecutar Modelo    | score   |             |
+| Spark         |----->|         Features   |----->|      e.g.           |-------->| Tomar Acción|
+|     Streaming |      |                    |      |  Regresión Logística|         |             | 
+| pre calcular  |      +--------------------+      +---------------------+         +-------------+
+|   features    | 
++---------------+
+
+
+
+
+#+END_SRC
+
+#+RESULTS:
+[[file:./imagenes/arquitectura_2.png]]
+
+
+
+* Ejemplos de arquitectura
+
+** Spark Local
+
+
+#+BEGIN_SRC ditaa :file ./imagenes/arquitectura_3.png
+
+                                                                                           Predicciones
+                                                                                                ^
+                                                                                                |
++---------------+      +-----------------------------+      +--------------------+       +-------------+
+|               |      |                             |      |                    |       |             |
+|Entrenar Modelo|----->|        Guardar modelo       |----->| Copiar modelo a    |------>| Spark Local |
+|   con Spark   |      |         HSDF / AWS S3       |      |     Producción     |       | (¿Docker?)  |
++---------------+      +-----------------------------+      +--------------------+       +-------------+
+                                                                                                ^
+                                                                                                |
+                                                                                           Datos Nuevos
+
+
+#+END_SRC
+
+#+RESULTS:
+[[file:./imagenes/arquitectura_3.png]]
+
+
+
+
+
+* Referencias
+
+[[http://data-informed.com/spark-ml-from-lab-to-production-picking-the-right-deployment-architecture-for-your-business/][Spark ML from Lab to Production: Picking the Right Deployment Architecture for
+Your Business]] 
+
+* COMMENT Settings
+# Local Variables:
+# org-babel-sh-command: "/bin/bash"
+# org-confirm-babel-evaluate: nil
+# org-export-babel-evaluate: nil
+# ispell-check-comments: exclusive
+# ispell-local-dictionary: "spanish"
+# End:
+
+
