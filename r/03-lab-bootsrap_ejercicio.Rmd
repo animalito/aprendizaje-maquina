@@ -1,0 +1,56 @@
+---
+title: "Ejercicio Bootstrap"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+output: html_document
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F)
+library(tidyverse)
+library(ggplot2)
+```
+
+Se realiza un experimento en el que se seleccionan 7 ratones de manera 
+aleatoria de un total de 16 ratones. A los siete seleccionados se les 
+suministra un tratamiento mientras que los restantes formarán el grupo de control. 
+El objetivo del tratamiento es prolongar la supervivencia de los ratones. L
+a siguiente tabla muestra el tiempo de supervivencia en días después de 
+suministrar el tratamiento.
+
+Tu objetivo es determinar si el tratamiento prolongó la supervivencia.
+
+Los datos:
+
+```{r}
+tratamiento <- c(94, 197, 16, 38, 99, 141, 23)
+control <- c(52, 104, 146, 10, 51, 30, 40, 27, 46)
+```
+
+1. Usa las medias de las muestras para determinar si hay diferencias en 
+los grupos, esto es calcula $\overline{x} - \overline{y}$.
+
+```{r}
+
+```
+
+2. Estima el error estándar de la diferencia usando bootsrap.
+
+```{r}
+```
+
+3. Corrobora tus resultados del punto anterior usando que $\hat{se}(\overline{x} - \overline{y}) = \sqrt{\hat{se}(\overline{x})^2 + \hat{se}(\overline{y})^2}$
+
+```{r}
+
+```
+
+4. ¿Dirías que el tratamiento incrementó la supervivencia de los ratones?
+
+5. Supongamos que deseamos comparar los grupos usando las medianas en lugar de las medias, estima la diferencia de las medianas y usa bootstrap para estimar el error estándar de la diferencia. ¿Cuál es tu conclusión de los resultados?
+
+```{r}
+
+```
+
+
+

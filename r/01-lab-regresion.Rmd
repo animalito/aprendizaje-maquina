@@ -1,0 +1,346 @@
+---
+title: "Regresión lineal"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+css: estilos.css
+bibliography: bib.bib
+in_header: mypackages.sty
+output: 
+  html_document:
+    toc: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE, echo = F}
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F)
+```
+
+# Laboratorio
+
+Ejemplo de Izenman, *Modern Multivariate Statistical Techniques*.
+Código y ejercicio adaptado de clase de [Felipe Gonzalez](fg-clases.squarespace.com)
+
+```{r, warning=FALSE,message=FALSE}
+library(glmnet)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(arm)
+library(kknn)
+bodyfat <- read_csv('datos/bodyfat.csv')
+names(bodyfat)
+nrow(bodyfat) 
+bodyfat$id <- bodyfat$`[EMPTY]`
+bodyfat$`[EMPTY]` <- NULL
+names(bodyfat)[1] <- "id"
+head(bodyfat)
+```
+
+# Descripcion de la base
+
+Short Summary:
+Lists estimates of the percentage of body fat determined by underwater
+ weighing and various body circumference measurements for 252 men. 
+
+ Classroom use of this data set:
+ This data set can be used to illustrate multiple regression techniques.
+ Accurate measurement of body fat is inconvenient/costly and it is 
+ desirable to have easy methods of estimating body fat that are not' inconvenient/costly.
+
+ More Details:
+ A variety of popular health books suggest that the readers assess their
+ health, at least in part, by estimating their percentage of body fat. In
+ Bailey (1994), for instance, the reader can estimate body fat from tables
+ using their age and various skin-fold measurements obtained by using a
+ caliper. Other texts give predictive equations for body fat using body 
+ circumference measurements (e.g. abdominal circumference) and/or skin-fold
+ measurements. See, for instance, Behnke and Wilmore (1974), pp. 66-67;
+ Wilmore (1976), p. 247; or Katch and McArdle (1977), pp. 120-132). 
+ 
+
+ The variables listed below, from left to right, are: 
+
+ - Density determined from underwater weighing
+- Percent body fat from Siri's (1956) equation
+-  Age (years)
+-  Weight (lbs)
+-  Height (inches)
+-  Neck circumference (cm)
+-  Chest circumference (cm)
+-  Abdomen 2 circumference (cm)
+-  Hip circumference (cm)
+-  Thigh circumference (cm)
+-  Knee circumference (cm)
+-  Ankle circumference (cm)
+-  Biceps (extended) circumference (cm)
+-  Forearm circumference (cm)
+-  Wrist circumference (cm)
+
+Conviene pasar dos variables al sistema métrico para poder
+interpretar facilmente:
+
+```{r}
+bodyfat$estatura.cm <- 2.54*bodyfat$estatura
+bodyfat$peso.kg <- 0.45359237 * bodyfat$peso
+bodyfat$densidad <- NULL
+bodyfat$estatura <- NULL
+bodyfat$peso <- NULL
+```
+
+# Entrenamiento y prueba
+
+En primer lugar, tenemos que separar una muestra de entrenamiento y una de prueba.
+
+Generalmente con un conjunto de datos de este
+tamaño evaluamos desempeño con validación cruzada, no muestra de prueba. Esto lo veremos más adelante.
+
+### Ejercicio {#ejercicio}
+
+Selecciona 60 casos de entrenamiento fijando la semilla en 
+201702. Llama al conjunto de entrenamiento `bodyfat_entrena`
+y al conjunto de prueba `bodyfat_prueba`
+
+```{r}
+
+```
+
+# Diagnostico
+
+Es importante realizar diagnósticos de nuestros datos
+antes de modelar. 
+
+### Ejercicio {#ejercicio}
+
+1. Pon la base de datos de entrenamiento en formato largo (es decir, usa la funcion gather para generar una base de datos donde tengas una columna con los nombres de las variables y una columna con los valores para las n observaciones de cada una de las variables) de manera que tengas
+una variable llamada variable en donde tengas todos los
+nombres de las columnas y una columna llamada valor donde
+tengas sus valores. Junta todas las variables menos el id.
+2. Grafica el histograma de todas las variables usando ggplot
+
+## Variables fuera de rango
+
+### Ejercicio {#ejercicio}
+
+1. Identifica medidas de estatura y tobillo que consideres estan
+fuera del rango. 
+2. Filtra los ids para los que la estatura es menor a 100 cm en entrenamiento
+3. Decide en forma individual si se trata de observaciones atipicas
+o si son casos plausibles. Elimina los primeros.
+4. Realiza lo mismo para casos donde tobillo sea mayor que 30
+5. Vuelve a graficar los histogramas si decidiste eliminar variables.
+6. Compara las graficas originales de entrenamiento y las
+de observaciones removidas.
+7. Ayudara con tu prediccion?
+
+###
+
+```{r}
+
+```
+
+# Preparación de variables
+
+En primer lugar, estandarizamos las variables de entrada. Esto facilita la interpretación
+del modelo resultante y también mejora el desempeño de muchos algoritmos de entrenamiento. Primero
+checamos media y desviación estándar de cada variable (*en entrenamiento*).
+
+### Ejercicio {#ejercicio}
+
+Construye una base de datos llamada `media_de` en 
+la que guardes las medias y desviaciones estandar de todas
+las variables del conjunto de entrenamiento.
+
+La base que construyas debe tener las variables:
+variable, media, de.
+
+###
+
+```{r}
+```
+
+
+Y ahora estandarizamos las variables originales (no es necesario estandarizar la respuesta, 
+que es grasacorp). Vamos a crear una función para hacer esto:
+
+```{r}
+estandarizar <- function(nuevos_dat, media_de){
+  datos_est <- nuevos_dat %>%
+    gather(variable, valor, -id) %>%
+    group_by(variable) %>%
+    filter(variable != 'grasacorp') %>%
+    left_join(media_de) %>%
+    mutate(valor_st = (valor - media)/de) %>%
+    dplyr::select(id, variable, valor_st) %>%
+    spread(variable, valor_st) %>%
+    left_join(dplyr::select(nuevos_dat, id, grasacorp))
+  datos_est
+}
+```
+
+### Ejercicio {#ejercicio}
+
+Utiliza la funcion `estandarizar` para generar un data frame
+que llamaras `bf_entrena_st`.
+
+Grafica los historgramas de estas variables. Que diferencia hay con 
+respecto a las originales?
+
+###
+
+```{r}
+
+```
+
+# Ajuste de modelo
+
+### Ejercicio {#ejercicio}
+
+Utiliza la base `bf_entrena_st` para entrenar un modelo 
+de regresion multivariado en donde utilices `grasacorp`
+como variable dependiente y todas las demas variables
+en la base como independientes.
+
+Llama a tu modelo `mod_1`.
+
+Calcula el error de entrenamiento.
+
+###
+
+```{r}
+
+```
+
+# Evaluación de las predicciones
+
+
+Para evaluar el error de predicción, en primer lugar, 
+debemos estandarizar los datos.
+de prueba. Nótese que **es necesario usar media y desviación estándar que usamos en la fase de entrenamiento**.
+
+### Ejercicio {#ejercicio}
+
+Utiliza la funcion `estandarizar` pero con la base `bodyfat_prueba` y las medias y desviaciones estandar de entrenamiento que guardaste en la base `media_de`.
+
+Nombra esta base como `bodyfat_prueba_st`
+
+Incluye en ese data frame una variable que se llame `pred` resultado de aplicar la funcion `predict` con el `mod_1` y los nuevos datos 
+`bodyfat_prueba_st`
+
+Grafica el histograma de las predicciones.
+
+Grafica (geom_point) en rojo las predicciones contra el verdadero valor (esto es la variable `pred` en las x y la variable `grasacorp` en las y)
+
+###
+
+```{r}
+```
+
+# Bondad de ajuste
+
+Para verificar la bondad de ajuste, podemos utilizar nuestro 
+conjunto de prueba.
+
+### Ejercicio {#ejercicio}
+
+1. Incluye (muta) el dataframe `bodyfat_prueba_st` de manera que hagas una nueva variable llamada `residual` (la resta entre grasacorp y pred)
+2. Identifica casos con errores grandes en prueba.
+3. Evalua en forma individual los residuales de los elementos identificados en 2.
+4. Hay casos atipicos sospechosos? Debemos preocuparnos por algun
+outlier?
+5. Identifica los outliers ahora por distancias de cook (si este no fue el metodo que utilizaste en 2)
+
+###
+
+# Error
+
+De cualquier forma, nuestra estimación del error de predicción es  la raíz de error cuadrático medio en prueba.
+
+### Ejercicio {#ejercicio}
+
+1. Calcula el error cuadratico medio en prueba.
+2. Estima su precisión utilizando bootstrap. Para
+eso, apoyate de la funcion `bstrap`.
+Puedes crear un vector que se llame `res_2` donde guardes
+el vector de residuales al cuadrado.
+
+Despues llama a la funcion `bstrap` de esta forma: `bstrap(res_2, 200)`.
+
+```{r}
+bstrap <- function(x, B){
+  x_rep <- sapply(1:B, function(i){
+    sqrt(mean(sample(x, length(x), replace=T)))
+  })
+  sd(x_rep)
+}
+
+```
+
+
+# Comparacion del desempenio con k vecinos mas cercanos
+
+Finalmente, ¿cómo se desempeña un método como k-vmc?
+
+```{r, eval = F}
+library(kknn)
+errores.vmc.prueba <- sapply(1:30, function(i){
+  vmc <- kknn(grasacorp~., k=i, train=bf_entrena_st, test = bodyfat_prueba_st)
+  sqrt(mean((predict(vmc) - bodyfat_prueba_st$grasacorp)^2))
+})
+qplot(1:30, errores.vmc.prueba, geom='line') + geom_point()
+```
+
+Y vemos claramente que en este ejemplo no podemos superar el error del modelo de regresión.
+
+
+# Error en modelo de regresión: discusión
+
+Sospechamos que una de las razones de nuestro erro alto es la varianza.
+Los errores estándar grandes de los coeficientes en la corrida de arriba sugiere que la varianza podría estar afectando nuestras predicciones.
+
+Podemos ver esto de manera más simple 
+si simulamos distintas muestras de entrenamiento usando bootstrap y consideramos la variación de las predicciones. Tenemos que hacer la cadena de preparación:
+
+
+```{r, eval=FALSE}
+set.seed(28)
+ajustar.modelo <- function(){
+    dat_ind <- data_frame(id = sample(bodyfat$id, N, replace = T))
+    dat_rep <- left_join(dat_ind, bodyfat)
+    dat_rep$id <- 1:nrow(dat_rep)
+    bf_e <- dat_rep %>%
+      gather(variable, valor, -id)
+    media_de <- bf_e %>%
+      group_by(variable) %>%
+      summarise(media = mean(valor), de = sd(valor))
+    bodyfat_entrena_st <- estandarizar(dat_rep, media_de)
+    lm(grasacorp ~ ., data = bodyfat_entrena_st[,-1])
+    }
+
+modelos <- lapply(1:50, function(i){
+  ajustar.modelo()
+})
+```
+
+Podemos extraer los coeficientes con
+
+```{r, eval = F}
+coeficientes.lista <- lapply(1:50, function(i){
+  mod <- modelos[[i]]
+  df <- data.frame(t(coef(mod)))
+  df$rep <- i
+  df
+}) 
+coefs.1 <- rbind_all(coeficientes.lista) %>%
+  dplyr::select(-X.Intercept.) %>%
+  gather(variable, coeficiente, edad:peso.kg)
+coefs.1$variable <- reorder(coefs.1$variable, abs(coefs.1$coeficiente), mean)
+ggplot(coefs.1, aes(x=variable, y=coeficiente, group=rep)) + geom_point() +
+  geom_line(alpha=0.2)+ coord_flip()
+
+```
+
+
+Y notamos que hay variación considerable en varios de los coeficientes: ver por ejemplo
+peso.kg, cadera, abdomen y pecho. Esta variabilidad en los coeficientes se puede traducir
+a variabilidad en la predicción, lo que a su vez resulta en error de predicción más alto. En algunos casos, los coeficientes toman valores que demasiado grandes (positivos o negativos) y son poco creíbles.
+

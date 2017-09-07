@@ -1,0 +1,406 @@
+---
+title: "Redes Neuronales"
+author: "Miguel Angel Escalante Serrato"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+css: estilos.css
+output: 
+  html_document:
+    toc: 1
+    toc_float: yes
+---
+	
+```{r, include=F}
+set.seed(42)
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F)
+library(plyr)
+library(reshape2)
+library(tidyverse)
+library(ggplot2)
+library(igraph)
+##rmarkdown::render('07-redes-neuronales.Rmd')
+```
+# Introducción
+
+Las redes neuronales son un método de aprendizaje que fue desarrollado en distintas áreas (estadística e inteligencia artificial). Fue desarrollado a finales de los años 40 y principios de los 50. Se tomó como base el cerebro humano y la red de neuronas que lo componen para generar el pensamiento humano. 
+
+La idea central es extraer combinaciones lineales de entradas como características derivadas y luego modelar la variable respuesta como combinación no lineal de los resultados de las mismas. Se dejaron de usar cuando se identificó que el poder de cómputo no era el suficiente para llevarlos a cabo; sin embargo con el desarrollo del algoritmo *backpropagation* y el poder de cómputo actual, las redes neuronales retomaron popularidad. Actualmente son el corazón de los modelos de *deep learning*. 
+
+Es un método muy poderoso que se ha usado en muchas disciplinas, principalmente para reconocimiento de imágenes, voz, *feature extraction* y cuando los datos vienen de sensores. 
+
+# Redes Neuronales 
+
+Las redes neuronales agrupan una gran cantidad de métodos de aprendizaje derivado del modelo más básico que veremos ahora; red neuronal de una capa. Las redes neuronales tienen muchísimo ~~MAME~~ *hype*, lo que las hace sonar a magia negra o un arte místico. Son un conjunto de modelos estadísticos, como los que hemos visto con anterioridad. 
+
+Una red neuronal es un modelo de regresión o clasificación de dos etapas, la manera más sencilla de representarla es a través de un grafo. 
+
+Usualmente cuando tenemos un modelo de regresión sólo tenemos un nodo de salida. Pero la red neuronal puede ajustar con más nodos de salida (como en un problema de clasificación). 
+
+Si tenemos un problema de clasificación con $K$ posibles salidas, tenemos que cada uno de los nodos de salida modela la probabilidad de la clase $K$. Por cada *observación* tenemos un vector de dimensión $K$ (ceros y unos).
+
+\[ Y_k = \left \lbrace
+    \begin{array}{c}
+	0\\
+	1
+    \end{array}
+	\right. 
+\]
+
+Las características derivadas de las entradas inciales las llamaremos $a_k$ y se crean como combinaciones lineales de las entradas y luego estas nuevas entradas van como componentes lineales a las variables $p_K$. Como sigue: 
+
+\[a_k=h\left(\beta_{k,0}+\sum_{i=1}^p \beta_{k,i} x_i\right) \]
+
+con $k=1,...,m$. Llamamos a $h(v)$ la función de activación, y usualmente usamos la función logística: \[h(v) = \dfrac{e^{-v}}{1+e^{-v}}.\] Se puede cambiar esta función a otras funciones no lineales.
+
+Las distintas $\beta$ son parámetros que iremos seleccionando. Ahora con estas nuevas entradas$a_1,...,a_m, modelamos la regresión logística para la salida. 
+
+\[p_1(a) = h\left(\beta_0+\sum_{k=1}^m\beta_ka_k\right)\]
+
+
+* **Pregunta**: ¿Si usamos h(v)=I(v)=v? qué pasa con el modelo
+
+* Se puede demostrar que si se crean suficientes entradas derivadas, la función p_1(x), puede aproximar cualquier función continua. Como comenté arriba la función h puede ser cualquier función con forma similar a la logística. 
+
+
+## Ajuste
+
+Hagamos un ejemplo sencillo de clasificación binaria con una sola entrada $x$. Supondremos que el modelo viene dado por:
+
+
+```{r}
+h <- function(x){
+    exp(x)/(1+exp(x))
+}
+x <- seq(-2,2,0.1)
+p <- h(2-3*x^2) #probabilidad condicional de clase 1 (vs. 0)
+set.seed(2805721)
+x.1 <- runif(30, -2, 2)
+g.1 <- rbinom(30, 1, h(2-3*x.1^2))
+datos <- data.frame(x.1,g.1)
+dat.p <- data.frame(x,p)
+g <- qplot(x,p, geom='line', colour='red')
+g + geom_point(data = datos, aes(x=x.1,y=g.1))
+```
+Queremos ajustar la curva roja que da la probabilidad condicional de clase. Si ajustaramos un modelo de regresión logística con $x^2$ como entrada, tendríamos un ajuste muy razonable. Ahora dadas las ideas discutidas arriba lo que queremos es crear entradas derivadas de forma automática. Crearemos dos entradas $a_1$ y $a_2$, funciones de $x_1$ y luego predecir $g.1$, la clase en función de esas dos entradas. 
+
+Ahora definimos estas dos funciones como una combinación lineal de $x$, de la siguiente forma:
+
+```{r}
+a.1 <- h( 1 + 2*x)  # 2(x+1/2)
+a.2 <- h(-1 + 2*x)  # 2(x-1/2) # una es una versión desplazada de otra.
+```
+Las dos `a` se ven de la siguiente forma:
+
+```{r}
+dat.a <- data.frame(x=x, a.1=a.1, a.2=a.2)
+dat.a2 <- melt(dat.a, id.vars='x')
+ggplot(dat.a2, aes(x=x, y=value, colour=variable, group=variable)) + geom_line()
+```
+
+Haciendo modificaciones lineales a las variables tenemos las siguientes funciones:
+
+```{r}
+dat.a <- data.frame(x=x, a.1=-4+12*a.1, a.2=-12*a.2, suma=-4+12*a.1-12*a.2)
+dat.a2 <- melt(dat.a, id.vars='x')
+ggplot(dat.a2, aes(x=x, y=value, colour=variable, group=variable)) + geom_line()
+```
+
+y si aplicamos $h$, tenemos: 
+
+```{r}
+dat.2 <- data.frame(x, p2=h(-4 + 12*a.1 - 12*a.2))
+ggplot(dat.2, aes(x=x, y=p2)) + geom_line(col='blue')+
+geom_line(data=dat.p, aes(x=x,y=p), col='green') +ylim(c(0,1))+
+   geom_point(data = datos, aes(x=x.1,y=g.1))
+
+```
+
+Podemos ver que la función está bastante cerca, a esto nos referimos cuando hablamos del ajuste de las funciones. Dos funciones logísticas pueden replicar el comportamiento de otra función complicada. 
+
+## Ajuste de parámetros
+
+Si vemos nuestras funciones, nos damos cuenta que queremos encontrar los mejores parámetros $\beta_0,\beta_1,\beta_{1,0},\beta_{1,1},\beta_{2,0},\beta_{2,1}$. Si lo pensamos bien, lo podemos hacer como un problema de optimización de 7 parámetros. Para eso necesitamos generar la función que queremos maximizar. 
+
+### Ejercicio (feed forward) {#ejemplo} 
+
+Escriban en R la función que calcula $p$, en función de $x$, con los 7 parámetros.
+```{r}
+source('07-sol.R')
+feed.fow <- function(beta, x){
+  a.1 <- h(beta[1] + beta[2]*x) # calcula variable 1 de capa oculta
+  a.2 <- h(beta[3] + beta[4]*x) # calcula variable 2 de capa oculta
+  p <- h(beta[5]+beta[6]*a.1 + beta[7]*a.2) # calcula capa de salida
+  p
+}
+```
+
+## Optimización 
+
+Ahora que ya tenemos la función, calculamos la devianza, para esto conviene tener un generador de funciones ya que la devianza, como medida del error de ajuste depende tanto de $x$, como de $g$, y luego en cada punto de las $\beta$s: 
+
+```{r}
+devianza.func <- function(x, g){
+    # esta función es una fábrica de funciones
+   devianza <- function(beta){
+         p <- feed.fow(beta, x)
+      - 2 * mean(g*log(p) + (1-g)*log(1-p))
+   }
+  devianza
+}
+```
+Ejemplo de esto: 
+```{r}
+dev <- devianza.func(x.1, g.1) # crea función dev
+## ahora dev toma solamente los 7 parámetros beta:
+dev(c(0,0,0,0,0,0,0))
+dev(rnorm(7))
+```
+
+Ya que tenemos la métrica, y una manera de evaluarla, podemos optimizar. Usamos la función `optim` de R: 
+```{r, cache=TRUE}
+set.seed(5)
+salida <- optim(rnorm(7), dev, method='BFGS') # inicializar al azar punto inicial
+salida
+beta <- salida$par
+```
+
+Grafiquemos nuestro estimador de la función: 
+
+```{r}
+## hacer feed forward con beta encontroados
+p.2 <- feed.fow(beta, x)
+dat.2 <- data.frame(x, p.2=p.2)
+ggplot(dat.2, aes(x=x, y=p.2)) + geom_line()+
+geom_line(data=dat.p, aes(x=x,y=p), col='red') +ylim(c(0,1))+
+   geom_point(data = datos, aes(x=x.1,y=g.1))
+```
+
+Los coeficientes encontrados son: 
+```{r}
+beta
+```
+* **pregunta**: ¿Qué opinan del tamaño de los coeficientes?
+
+Parece ser que el ajuste no es muy estable, por lo que nos viene a la cabeza el concepto de regularización de nuevo: 
+
+### Ejercicio
+
+Escriban la función generadora de funciones, pero con regularización:
+
+## Regularización
+
+```{r, cache=T}
+devianza.reg <- function(x, g, lambda){
+    # esta función es una fábrica de funciones
+   devianza <- function(beta){
+         p <- feed.fow(beta, x)
+      - 2 * mean(g*log(p) + (1-g)*log(1-p)) + lambda*sum(beta^2)
+   }
+  devianza
+}
+dev.r <- devianza.reg(x.1, g.1, 0.001) # crea función dev
+set.seed(5)
+salida <- optim(rnorm(7), dev.r, method='BFGS') # inicializar al azar punto inicial
+salida
+beta <- salida$par
+dev(beta)
+p.2 <- feed.fow(beta, x)
+dat.2 <- data.frame(x, p.2=p.2)
+ggplot(dat.2, aes(x=x, y=p.2)) + geom_line()+
+geom_line(data=dat.p, aes(x=x,y=p), col='red') +ylim(c(0,1))+
+   geom_point(data = datos, aes(x=x.1,y=g.1))
+```
+Ahora la librería que nos ayuda a ajustar una red neuronal. En este caso ajustamos una red regularizada. 
+
+```{r, cache=T}
+library(nnet)
+source('graf_nnet.R')
+set.seed(12)
+nn <- nnet(g.1~x.1, data=datos, size = 2, decay=0.002, entropy = T)
+plot(nn)
+```
+Y los resultados se ven así: 
+
+```{r}
+p.3 <- predict(nn, newdata=data.frame(x.1=x))
+ggplot(dat.2, aes(x=x, y=p.3)) + geom_line()+
+geom_line(data=dat.p, aes(x=x,y=p), col='red') +ylim(c(0,1))+
+   geom_point(data = datos, aes(x=x.1,y=g.1))
+```
+
+### Ejercicio {#ejercicio}
+
+Ahora ajustemos una red neuronal (con las funciones que ya hicimos, no con nnet), de tal forma que ajustemos la siguiente función: 
+
+```{r}
+x <- seq(-2,2,0.05)
+p <- h(3 + x- 3*x^2 + 3*cos(4*x))
+set.seed(280572)
+x.2 <- runif(300, -2, 2)
+g.2 <- rbinom(300, 1, h(3 + x.2- 3*x.2^2 + 3*cos(4*x.2)))
+datos <- data.frame(x.2,g.2)
+dat.p <- data.frame(x,p)
+g <- qplot(x,p, geom='line', col='red')
+g + geom_jitter(data = datos, aes(x=x.2,y=g.2), col ='black',
+  position =position_jitter(height=0.05), alpha=0.4)
+```
+
+Agregen dos neuronas a su red en caso de ser necesario. 
+
+# Redes Neuronales Multi-Capa
+
+Si generalizamos las redes que usamos arriba podemos pensar en redes que no sólo tengan una capa oculta (intermedia); a las variables originales les llamamos *capa de entrada*, y la variable de salida, *capa de salida*. 
+```{r, echo=F}
+ gr <- graph(
+   c(1,4,1,5,1,6,2,4,2,5,2,6,2,4,2,5,2,6,3,4,3,5,3,6,4,7,4,8,5,7,5,8,6,7,6,8,7,8,7,9,8,9))
+plot(gr, layout=matrix(c(-1,1,-1,0,-1,-1,0,1,0,0,0,-1,1,0.5,1,-0.5,2,0), byrow=T,ncol=2),
+      vertex.size=50, vertex.color=c('salmon'),
+     vertex.frame.color=NA, edge.curved=FALSE)
+
+
+```
+
+Cambiaremos un poco la notación para denotar estas redes. 
+
+$\theta_{i,k}^{(l)} =$ peso de la entrada $a_k^{(l-1)}$ en la entrada $a_i^{(l)}$ cd la capa $l$:
+
+O.O
+
+En un ejemplo de capa 2 a capa 3, lo vemos clarísimo en la siguiente fórmula: 
+
+\[a_1^{(3)} = h\left(\theta_{1,0}^{(3)}+\theta_{1,1}^{(3)}a_1^{(2)}+ \theta_{1,2}^{(3)}a_2^{(2)} + \theta_{1,3}^{(3)}a_3^{(2)}\right)\]
+\[a_2^{(3)} = h\left(\theta_{2,0}^{(3)}+\theta_{2,1}^{(3)}a_1^{(2)}+ \theta_{2,2}^{(3)}a_2^{(2)} + \theta_{2,3}^{(3)}a_3^{(2)}\right)\]
+
+O.O
+
+Ilustrado mucho más claramente en la siguiente gráfica, el nodo gris es la ordenada en cada paso de las capas y le llamamos *sesgo*. 
+
+```{r, echo=F}
+ gr <- graph(
+   c(c(1,4,1,5,2,4,2,5,3,4,3,5)))
+ plot(gr, layout = matrix(c(-4,1,-4,0,-4,-1,0,1,0,-1), byrow=T, ncol=2),
+      vertex.label=c(expression(a[1]^2),expression(a[2]^2),expression(a[3]^2),
+        expression(a[1]^3), expression(a[2]^3)), 
+      vertex.size=50, vertex.color=c('salmon','salmon','salmon','red','red'), vertex.label.cex=1.5,
+      vertex.label.color='white',vertex.frame.color=NA,
+   edge.label=c(expression(theta[11]^3),expression(theta[21]^3),
+     expression(theta[12]^3),  expression(theta[22]^3),
+      expression(theta[13]^3), expression(theta[23]^3)))
+```
+
+## Cálculo en redes (feed forward)
+
+La primera capa (entrada) se queda igual que las entradas: 
+
+\[a_j^{(1)}=x_j, j=1,...,n_1\] 
+
+Para la primer capa oculta, (segunda capa): 
+
+\[a_j^{(2)}=h\left(\theta_{j,0}^{(2)}+\sum_{k=1}^{n_1}\theta_{j,k}^{(2)}a_k^{(1)}  \right), j=1,...,n_2,\] 
+
+para la $l$-ésima capa: 
+
+\[a_j^{(l)}=h\left(\theta_{j,0}^{(l)}+\sum_{k=1}^{n_{l-1}}\theta_{j,k}^{(l)}a_k^{(l-1)}  \right), j=1,...,n_l.\] 
+
+Para llegar a la capa final de salida, suponiendo que tenemos $L$ capas ($L-2$ capas ocultas):
+
+\[p_1 = h\left(\theta_{j,0}^{(L)}+\sum_{k=1}^{n_{L-1}}\theta_{j,k}^{(L)}a_k^{(L-1)}  \right), j=1,...,n_L.\]
+
+Tenemos entonces que cada capa se caracteriza por el conjunto de parámetros $\Theta^{(l)}$, una matriz de $n_lxn_{l-1}$; por lo que la red completa se caracteriza por: 
+
+* La estructura elegida (número de capas y número de nodos en cada capa)
+* Las matrices de pesos en cada capa $\Theta^{(1)}, \Theta^{(2)},..., \Theta^{(L)}$.
+
+Ahora podemos escribir de manera más compacta todo lo anterior, si tenemos que: 
+\[a^{(l)}=\left(a_1^{(l)},a_2^{(l)},...,a_{n_l}^{(l)} \right),\]
+podemos calcular las salidas igual que lo hacíamos en los anteriores, y si agregamos a los vectores $a^{(l)}$ una entrada $a_0^l=1, \forall l = 1,...,L-1$, más una columna con las ordenadas al origen de las matrices $\Theta^{(l)} se puede escribir de la siguiente manera: 
+
+## Feed Forward (Matricial)
+
+* Capa 2
+\[a^{(2)}=h(\Theta^{(1)}a^{(1)})\]
+* Capa $l$ (oculta):
+\[a^{(l)}=h(\Theta^{(l)}a^{(l-1)})\]
+* Capa de salida:
+\[a^{(L)}=h(\Theta^{(L)}a^{(L-1)})\]
+
+## Ajuste de parámetros
+
+Para un problema de clasificación binaria, ajustando los pesos de las matrices $\Theta^{(2)},\Theta^{(3)},...,\Theta^{(L)}$ de la red minimizando la devianza (regularizada) sobre la muestra de entrenamiento: 
+\[D(\Theta^{(2)},...,\Theta^{(L)}) = -\dfrac{2}{n} = \sum_{i=1}^n y_i\log(p_1(x_i))+(1-y_i)\log(1-p_1(x_i)) +\\ \lambda \sum_{l=2}^L\sum_{k=1}^{n_{l-1}}\sum_{j=1}^{n_l}(\theta_{j,k}^{(t)})^2.\]
+
+Este es un problema que en general no es convexo y no podemos garantizar la unicidad del mínimo. Con  el algoritmo *back-propagation*podemos encontrar los mínimos de la devianza en la red. También podemos usar otros métodos más complejos de optimización. 
+
+# Proceso para modelar
+
+Para modelar una red entonces debemos de seguir los siguientes pasos: 
+
+1. Definir el número de capas ocultas, número de neuronas por capa y el valor del parámetro de regularización (no olvidar la estandarización de las variables). 
+1. Seleccionar parámetros al azar para $\Theta^{(2)},\Theta^{(3)},...,\Theta^{(L)}$. Dado que estandarizamos las variables podemos empezar con muestras aleatorias de normales. 
+2. Minimizar la devianza. 
+2. Verificar la convergencia del algoritmo. 
+2. Predecir usando el modelo ajustado. 
+
+El proceso para ajustar estas redes es mucho más complejo y no está definido del todo. Ya que típicamente los algoritmos que usamos encuentran mínimos locales, y en algunos casos puede variar de corrida a corrida. 
+
+## Ejercicio {#ejemplo}
+
+Usamos los datos de la diabetes. Ajustemos una red con una sola capa, 8 neuronas, y una penalización de 0.6. Córranlo 3 veces y vean qué pasa, usen `nnet`. 
+
+```{r}
+library(MASS)
+library(nnet)
+```
+
+## Ejercicio {#ejemplo}
+
+Corran de nuevo una regresión logística regularizada (usen cross-validation) y comparen resultados. 
+
+
+# Generales de Redes
+
+Cuando estamos decidiendo el número de neuronas, capas y parámetros de regularización, tenemos que tomar en cuenta el tiempo de ajuste, recordar que a más capas y más neuronas el procesamiento se vuelve muy pesado. La mejor manera de aprender los parámetros a usar es prueba y error, sin embargo algunas ideas útiles son las siguientes: 
+
+* Una capa, en teoría, es suficiente para estimar cualquier función respuesta con los suficientes datos, y en la práctica es lo más común. Se puede probar con más capas para ver cómo evoluciona el desempeño, pero de nuevo, más capas implica mucho más tiempo de cómputo. 
+* El número de entradas (neuronas), es común que vaya disminuyendo conforme avanzamos de capa.
+* Probar con distintos valores de regularización con el fin de afinar el ajuste de las mismas. Entre más grande la red, mayor el parámetro de regularización requerido. 
+* En problemas chicos, podemos correr distintas redes y promediar los resultados. 
+
+* **Pregunta**: ¿Cuál es la relación entre sesgo y varianza con el tamaño de la red?
+
+# Respuesta multinomial
+
+En caso que la respuesta no sea binaria sino que tome distintos valores, aumentamos el número de unidades en la capa de salida:
+
+La primera capa (entrada) se queda igual que las entradas: 
+
+\[a_j^{(1)}=x_j, j=1,...,n_1\] 
+
+Para la primer capa oculta, (segunda capa): 
+
+\[a_j^{(2)}=h\left(\theta_{j,0}^{(2)}+\sum_{k=1}^{n_1}\theta_{j,k}^{(2)}a_k^{(1)}  \right), j=1,...,n_2,\] 
+
+para la $l$-ésima capa: 
+
+\[a_j^{(l)}=h\left(\theta_{j,0}^{(l)}+\sum_{k=1}^{n_{l-1}}\theta_{j,k}^{(l)}a_k^{(l-1)}  \right), j=1,...,n_l.\] 
+
+Para llegar a la capa final de salida con K clases, suponiendo que tenemos $L$ capas ($L-2$ capas ocultas):
+
+\[p_j = h\left(\theta_{j,0}^{(L)}+\sum_{k=1}^{n_{L-1}}\theta_{j,k}^{(L)}a_k^{(L-1)}  \right), j=1,...,K.\]
+
+Las respuestas se codifican como indicadoras: $y_i = (1,0,0,0,....,0)$ si $g_i=1$, $y_i=(0,1,0,0,0,...,0)$ si $g_i=2$. La medida del error está dada por la misma fórmula y sumamos todas las devianzas como si fueran el caso binario: 
+
+\[-\dfrac{2}{n}\sum_{i=1}^n\sum_{j=1}^Ky_{i,j}\log(p_j(x_i))+(1-y_{i,j})\log(1-p_j(x_i)).\]
+
+Nuestro resultado de la clasificación, para algún caso es el máximo de todas las $p$'s.
+
+## Ejercicio {#ejemplo}
+
+Clasificación de dígitos, pixeles para distintos dígitos escritos a mano:
+
+```{r}
+library(ElemStatLearn)
+zip.d <- data.frame(zip.train)
+zip.d$digit <- factor(zip.d[,1])
+zip.d <- zip.d[,-1]
+set.seed(125)
+```

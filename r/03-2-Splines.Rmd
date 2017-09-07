@@ -1,0 +1,135 @@
+---
+title: "Splines"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+author: "Miguel Angel Escalante Serrato"
+css: estilos.css
+output: 
+  html_document:
+    toc: 1
+    toc_float: yes
+---
+
+```{r, include=F}
+set.seed(42)
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F)
+library(plyr)
+library(tidyverse)
+library(ggplot2)
+##rmarkdown::render('06-1-Splines.Rmd')
+```
+
+---
+
+# Introducción 
+
+Ya usamos modelos lineales tanto para regresión como para clasificación. Es importante la pregunta, ¿el mundo pareciera que puede ser modelado por modelos lineales? Ciertamente parece que es muy complicado que la relación $f(X)$ sea lineal con respecto a $X$. En los problemas de regressión típicamente se tendrá que la relación $f(X) = E[Y  | X]$  será no lineal, sin embargo muchas veces nos resulta conveniente y a veces necesario llevar una aproximación lineal a los fenómenos estudiados. 
+
+Es conveniente, porque un modelo lineal es mucho más fácil de interpretar, y si lo vemos desde el punto de vista de cálculo, estamos aproximando la función $F(X) por su aproximación de Taylor de primer orden. 
+
+Ahora nos dedicaremos a estudiar otros métodos para salirnos de la linealidad. La idea básica proviene de modificar un poco nuestros vectores de entradas $X$ con variables adicionales que serán transformaciones de $X$ y luego usar modelos lineales con el nuevo espacio de variables de entrada. 
+
+Denotamos $h_m(X) : \mathbb{R}^p\rightarrow\mathbb{R}$ como la m-ésima transformación de X, $m=1,...,M$. Entonces hacemos el modelo: 
+
+\[f(X)=\sum_{m=1}^M \beta_mh_m(X),\]
+
+una expansión lineal de $X$. 
+
+La belleza de esta idea viene de que en cuanto determinamos las funciones $h_m$, el modelo a ajustar es completamente lineal con respecto a estas nuevas variables que construímos; por lo que los métodos de ajuste siguen funcionando. 
+
+Algunos ejemplos de funciones que podemos usar como $h_m$ son los siguientes: 
+
+- $h_m(X) = X_m, m=1,...,p$ es el modelo lineal que ya conocemos
+- $h_m(X) = X_jX_k, \forall j,k \in \lbrace 1,...,p\rbrace$, nos da un modelo cuadrático sobre todas las entradas y sus interacciones; notemos sin embargo que el número de variables crece exponencialmente mientras que el grado del polinomio crezca. 
+- $h_m(X) = \log(X_j)$, abriendo la posibilidad a muchas otras funciones no lineales. 
+- $h_m(X) = I(L_m \leq X_x < U_m)$, una función indicadora para distintas regiones de $X_k$. Lo que resulta en distintas funciones constantes a pedazos. 
+
+Dependiendo del problema la base a usar, será distinta. Usaremos estas nuevas funciones y bases para generar una manera más flexible de representar $f(X)$. Los polinomios son una muy buena forma de aproximar cualquier funcion localmente, sin embargo tienden a comportarse de maneras erráticas de manera global. Ajustar una región de una función con un polinomio puede implicar que en valores grandes de nuestras entradas, el polinomio tome valores muy extremos. 
+
+Resulta importante tener una manera de controlar la complejidad de los modelos, usualmente se tienen 3 maneras de hacerlo: 
+
+- Restringir las funciones que vamos a utilizar. Por ejemplo, limitando las interacciones entre las variables, o el número de términos por cada entrada: 
+
+\[f(X)=\sum_{j=1}^p f_j(X_j)= \sum_{j=1}^p\sum_{m=1}^{M_j}\beta_{jm}h_{jm}(X_j). \]
+
+- Métodos de selección de variables que agregan las funciones base $h_m$ que agregan más al ajuste del modelo. Más de esto más adelante.
+- Métodos de regularización como vimos hace dos clases. Ridge sólo regulariza los parámetros, mientras que Lasso ayuda con regularización y selección de variables. 
+
+##Ejercicio {#ejercicio}
+Ajusten un polinomio de grado tres para los datos presentados:
+```{r}
+X <- runif(100, -1, 1)
+y <- 12*X^2+12*X^3+2*X-200 + runif(100,0,3)
+datos <- data.frame(X=X,y=y)
+ggplot(datos,aes(x=X,y=y))+geom_point()
+```
+
+
+# Polinomios a pedazos y Splines
+
+Por el momento asumiremos que X sólo tiene una dimensión para facilitar ver esto. Una función polinómica a pedazos es aquella que cuando dividimos el dominio de X en distintos pedazos, y representamos $f$ en cada uno de esos intervalos con un polinomio distinto en cada uno de esos intervalos. 
+
+## Ejemplo {#ejemplo}
+Usemos estas funciones:
+\[h_1(X)=I(X<\xi_1), h_2(X)=I(\xi_1\leq X<\xi_2), h_3(X)=I(\xi_2\leq X),\]
+para aproximar la siguiente función: 
+
+```{r}
+X <- runif(100, -1, 1)
+y <- X^2 + runif(100,-0.3,0.3)
+datos <- data.frame(X=X,y=y)
+ggplot(datos,aes(x=X,y=y))+geom_point()
+```
+
+## Ejemplo {#ejemplo}
+Cambia las bases a que sean funciones 
+\[h_1(X)=X\cdot I(X<\xi_1), h_2(X)=X\cdot I(\xi_1\leq X<\xi_2), h_3(X)=X \cdot I(\xi_2\leq X),\]
+
+\[h_1(X)=1, h_2(X)=X, h_3(X)=(X- \xi_1)_{+}, h_4=(X-\xi_2)_+\]
+
+```{r}
+set.seed(42)
+X <- runif(100, -1, 1)
+y <- X^2+2*X^3+4*X+2 + rnorm(100,-1,1)
+datos <- data.frame(X=X,y=y)
+ggplot(datos,aes(x=X,y=y))+geom_point()
+```
+
+# Splines
+
+Ahora qué pasa si no sólo buscamos continuidad de las funciones sino también en las derivadas de las funciones para tener cierto grado de *suavidad*. Para esto ocupamos los *splines cúbicos*. Calculemos el número de parámetros que tenemosque ajustar para un modelo. 
+
+Para un modelo cúbico en 3 regiones requerimos: (3 regiones)*(4 parámetros por región) - (2 nudos ) * (3 constantes por nudo) = 6. 
+
+Más generalmente un spline de orden $M$, con nudos $\xi_j, j=1,...,K$, es un polinomio a pedazos de orden M y tiene derivadas continuas hasta el orden $M-2$. La base para estos splines es la siguiente: 
+
+\[h_j(X) = X^{j-1}, j = 1,...,M\]
+\[h_{M+l}(X) = (X-\xi_l)^{M-1}_+, l = 1,...,K\]
+
+Un spline cúbico tiene $M=4$, también tenemos que los splines cúbicos son los splines más pequeños para los cuales el ojo humano no nota las discontinuidades. 
+
+## Splines cúbicos naturales. 
+
+Sabemos que cerca de los extremos el comportamiento de los polinomios tiende a ser muy errático, y las extrapolaciones pueden ser peligrosas. Estos problemas se acentúan bastante con los splines. Un spline cúbico natural agrega un par de restricciones a las áreas fuera de nuestros primer y últimos nodos, $(-\infty,\xi_1), (\xi_K, \infty)$, de tal forma que sean lineales en esos intervalos. Esto es hacemos que nuestros polinomios en estas áreas sean líneas. 
+
+## Ejemplo en R. 
+Si usamos el paquete `splines`, podemos generar una base de splines con base en los datos y los puntos de corte que queramos. 
+```{r}
+library(splines)
+X <- runif(100, -1, 1)
+y <- X^2+2*X^3+4*X+2 + rnorm(100,-1,1)
+X.spl <- ns(X,knots = c(-0.8,0.8), df=4)
+mod <- lm(y~X.spl)
+```
+
+# Ejercicio {#ejemplo}
+
+Usaremos los datos de *SAheart*, y hagan un ajuste a la variable `chd` con splines de las variables $\lbrace abp, tobacco, age, obesity \rbrace$. Primero un modelo por cada uno y luego armen un gran modelo con todas las variables, splines naturales con puntos de corte al inicio de la distribución y al final (sólo dos nudos).
+
+```{r}
+library(ElemStatLearn)
+data(SAheart)
+head(SAheart)
+table(SAheart$chd)
+
+
+```

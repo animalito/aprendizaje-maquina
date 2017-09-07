@@ -1,0 +1,380 @@
+---
+title: "K-medias"
+author: "Andrea Fernandez"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+output: 
+  ioslides_presentation:
+    css: ioslides.css
+    mathjax: local
+    self_contained: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, error = F, warning = F)
+library(stringdist)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+```
+
+# K-medias
+
+## K-medias: descripción {.smaller}
+
+- Fijamos el número $K$ de grupos que buscamos
+- Supongamos que $C_1\cup\cdots\cup C_K$ es una partición de los
+datos
+- Sea $W(C_k)$ nuestra medida de variación dentro de los clusters. 
+- Se busca resolver:
+
+$$min_{C_1,\ldots, C_K} \sum_{k=1}^K W(C_k)$$ 
+
+- Es un problema que no se puede resolver por enumeración pues el espacio 
+de particiones posibles es muy grande.
+- Sin embargo, si se escoge bien $W$ es posible conseguir un desempeño razonable (aunque, obvio la convergencia no está asegurada)
+
+## K-medias: W 
+
+- La definimos la medida de variación dentro de los clusters como el promedio de distancias
+euclideanas al cuadrado dentro del cluster
+
+$W(C_k) =\frac{1}{|C_k|}\sum_{i,j\in C_k} ||x_i-x_j||^2,$$
+
+De notar una serie de particularidades en esta ecuación, se extrae el 
+algoritmo.
+
+## K-medias: Algoritmo {.smaller}
+
+En el paso $s=1,2,\ldots$:
+
+1. (cálculo de centroides) Dada una asignación a clusters, encontramos nuevos centros promediando en cada cluster :
+$$m_k = \frac{1}{|C_k|}\sum_{i\in C_k} x_i.$$
+2. Dadas las medias $m_k$  (que pensamos fijas),
+encontramos una nueva asignación $C_k$ a clusters que minimice
+$$ 2\sum_{k=1}^K \sum_{i\in C_k} ||x_i - m_k||^2,$$
+y esto se hace asignando cada observación al centroide $m_k$ que esté más cercano.
+
+Nos detenemos cuando los centroides se quedan casi fijos de una iteración a la siguiente.
+
+## K-medias: observaciones
+
+ - El algoritmo se puede arrancar con centroides escogidos al azar (puntos de datos escogidos al azar, por ejemplo).
+ - Este algoritmo converge, pero no tiene garantía de obtener un mínimo global. Conviene correr varias veces, para distintos arranques aleatorios, y escoger
+ la solución con función objetivo más chica. Cuando no es posible correrlo múltiples veces, puede ser que la solución obtenida esté muy lejos de una óptima.
+ 
+## K-means: ejemplo {.tiny}
+
+Describiremos iteraciones para $k=5$ para el conjunto de datos:
+
+```{r, fig.height=3, fig.width=5}
+quakes.1 <- quakes[, c('lat','long')]
+quakes.1$id <- 1:nrow(quakes.1)
+ggplot(quakes.1, aes(x=lat, y=long)) + geom_point()
+```
+
+## K-means: ejemplo {.tiny}
+
+Seleccionamos muestra de datos al azar (centroides)
+```{r, fig.height=3, fig.width=5}
+set.seed(251122)
+K <- 5
+centros.1 <- sample_n(quakes.1, K) %>% 
+  mutate(k = 1:K)
+centros.2 <- centros.1 %>% gather(var, value.c, lat:long) %>% select(-id)
+quakes.2 <- quakes.1 %>% gather(var, value, lat:long)
+
+ggplot(quakes.1, aes(x=lat, y=long)) + geom_point() +
+  geom_point(data = centros.1, aes(x=lat, y=long), size=7, colour='red')
+```
+
+## K-means: ejemplo {.tiny}
+
+Agrupamos:
+```{r, fig.height=3, fig.width=5}
+agrup.1 <- left_join(quakes.2, centros.2)
+agrup <- agrup.1 %>% group_by(id, k) %>%
+  summarise(dist=sum((value-value.c)^2)) %>% 
+  group_by(id) %>%
+  mutate(min.dist = min(dist)) %>%
+  filter(min.dist == dist) %>%
+  left_join(quakes.1)
+ggplot(agrup, aes(x=lat, y=long, colour=factor(k))) + geom_point()
+```
+
+## K-means: ejemplo {.tiny}
+
+Recalculamos centros:
+```{r, fig.height=3, fig.width=5}
+centros.1 <- agrup %>% group_by(k) %>%
+  summarise(lat=mean(lat), long=mean(long))
+centros.2 <- centros.1 %>% gather(var, value.c, lat:long) 
+ggplot(quakes.1, aes(x=lat, y=long)) + geom_point() +
+  geom_point(data = centros.1, aes(x=lat, y=long), size=7, colour='red')
+```
+
+## K-means: ejemplo {.tiny}
+
+Agrupamos:
+```{r, fig.height=3, fig.width=5}
+agrup.1 <- left_join(quakes.2, centros.2)
+agrup <- agrup.1 %>% group_by(id, k) %>%
+  summarise(dist=sum((value-value.c)^2)) %>% 
+  group_by(id) %>%
+  mutate(min.dist = min(dist)) %>%
+  filter(min.dist == dist) %>%
+  left_join(quakes.1)
+ggplot(agrup, aes(x=lat, y=long, colour=factor(k))) + geom_point()
+```
+
+## K-means: ejemplo {.tiny}
+
+Recalculamos centros:
+```{r, fig.height=3, fig.width=5}
+centros.1 <- agrup %>% group_by(k) %>%
+  summarise(lat=mean(lat), long=mean(long))
+centros.2 <- centros.1 %>% gather(var, value.c, lat:long) 
+ggplot(quakes.1, aes(x=lat, y=long)) + geom_point() +
+  geom_point(data = centros.1, aes(x=lat, y=long), size=7, colour='red')
+```
+
+## K-means: ejemplo {.tiny}
+
+Agrupamos:
+```{r, fig.height=3, fig.width=5}
+agrup.1 <- left_join(quakes.2, centros.2)
+agrup <- agrup.1 %>% group_by(id, k) %>%
+  summarise(dist=sum((value-value.c)^2)) %>% 
+  group_by(id) %>%
+  mutate(min.dist = min(dist)) %>%
+  filter(min.dist == dist) %>%
+  left_join(quakes.1)
+ggplot(agrup, aes(x=lat, y=long, colour=factor(k))) + geom_point()
+```
+
+## Usando la funcion k-means {.tiny}
+
+```{r}
+set.seed(2800)
+k_medias <- kmeans(quakes.1[, c('lat','long')], centers = 5, nstart=30) # escoger varios comienzos aleatorios=
+str(k_medias)
+```
+
+## Usando la funcion k-means {.tiny}
+
+```{r, fig.height=3, fig.width=5}
+grupo <- k_medias$cluster
+quakes.1$grupo <- grupo
+ggplot(quakes.1, aes(x=lat, y=long, colour=factor(grupo))) + geom_point()
+```
+
+## ¿Cuándo usar o no usar k-medias? Existencia o no de grupos "naturales" {.tiny}
+
+Con iris es sencillo ver grupos "naturales", en un ejemplo como el siguiente no 
+tanto.
+
+```{r, fig.height=3, fig.width=5}
+set.seed(90902)
+df <- data.frame(x = rnorm(500,0,1), y = rnorm(500,0,1))
+df$grupo <- kmeans(df, centers=5, nstart=20)$cluster
+ggplot(df, aes(x=x, y=y, colour=factor(grupo))) + geom_point()
+```
+
+Nótese que k-means logró encontrar una buena solución, y esta solución puede
+ser muy útil para nuestros fines (agrupa puntos "similares"). Sin embargo, en esta situación debemos reconocer que los tamaños, las posiciones,
+y el número de grupos es fundamentalmente arbitrario, y una "buena" solución depende de 
+nuestros fines.
+
+## ¿Cuándo usar o no usar k-medias? {.tiny}
+
+Si corremos otra vez el algoritmo, vemos que los grupos encontrados son similares:
+```{r, fig.height=3, fig.width=5}
+df$grupo <- kmeans(df, centers=5, nstart=20)$cluster
+ggplot(df, aes(x=x, y=y, colour=factor(grupo))) + geom_point()
+```
+
+## ¿Cuándo usar o no usar k-medias? {.tiny}
+
+```{r, fig.height=3, fig.width=5}
+set.seed(909021)
+df <- data.frame(x = rnorm(500,0,1), y = rnorm(500,0,1))
+df$grupo <- kmeans(df, centers=5, nstart=20)$cluster
+ggplot(df, aes(x=x, y=y, colour=factor(grupo))) + geom_point()
+```
+
+La solución es bastante diferente. Esta diferencia no se debe al comienzo aleatorio
+del algoritmo. Se debe más bien a que los grupos se están definiendo por variación muestral,
+y pequeñas diferencias en las muestras.
+
+En esta situación, debemos aceptar que la **responsabilidad** de escoger la solución
+final está en nuestras manos, y no del algoritmo, y entender que hay arbitrariedad considerable en los segmentos encontrado sus tamaños. Esto no le quita necesariamente utilidad a la segmentación resultante, pero hay que recordar que los grupos que encontramos
+son en ciertos aspectos arbitrarios.
+
+## Selección de número de clusters {.tiny}
+
+Podemos medir la calidad de la segmentación según la suma de cuadrados dentro
+de los clusters, que nos dice qué tan compactos son. Primero vemos
+un ejemplo simple
+
+```{r, fig.height=3, fig.width=5}
+set.seed(2800)
+df <- data.frame(x=c(rnorm(100,-50,10), rnorm(100,0,10), rnorm(70,30,2) ))
+qplot(df$x)
+```
+
+## Selección de número de clusters {.tiny}
+
+Agregar un cluster adicional hace más complejo nuestro resumen, así
+que incrementamos el número de clusters sólo cuando tenemos una mejora
+considerable en la solución.
+
+```{r, fig.height=3, fig.width=5}
+ajustes.km <- lapply(1:20, function(k){
+  kmedias <- kmeans(df, centers = k, nstart = 20)    
+  kmedias
+})
+tot.within <- sapply(ajustes.km, function(aj){ aj$tot.withinss})
+qplot(1:length(tot.within), tot.within, geom='line') + geom_point()
+```
+
+En este caso, parece que 3 es un buen número.
+
+## Caracterización y descripción de grupos {.tiny}
+
+Lo primero que tenemos que hacer para entender una segmentación dada es 
+caracterizar a los grupos en cuanto a las variables que usamos para segmentar.
+
+European Social Survey (ESS) data from the 2008 (fourth) round in the United Kingdom. The data are from a questionnaire on "what the responsibilities of governments should or should not be". 
+
+gvjbevn
+> Job for everyone, governments' responsibility (0-10).
+
+gvhlthc
+> Health care for the sick, governments' responsibility (0-10).
+
+gvslvol
+> Standard of living for the old, governments' responsibility (0-10).
+
+gvslvue
+> Standard of living for the unemployed, governments' responsibility (0-10).
+
+gvcldcr
+> Child care services for working parents, governments' responsibility (0-10).
+
+gvpdlwk
+> Paid leave from work to care for sick family, governments' responsibility (0-10).
+
+sbprvpv
+> Social benefits/services prevent widespread poverty (1-5).
+
+sbeqsoc
+> Social benefits/services lead to a more equal society (1-5).
+
+sbcwkfm
+> Social benefits/services make it easier to combine work and family (1-5).
+
+```{r, echo = F}
+load('data/ejemplos/ess4_gb.Rdata')
+dat <- ess4.gb %>% dplyr::select(idno, gvjbevn:sbcwkfm)
+nombres <- data.frame(var = c("gvjbevn", "gvhlthc", "gvslvol", "gvslvue", "gvcldcr", "gvpdlwk", 
+"sbprvpv", "sbeqsoc", "sbcwkfm"),
+nombre = c('trabajo_a_todos','cuidados_salud_enfermos','garantizar_nivel_mayores','garantizar_nivel_desempleados','ayuda_padres_trabajadores','ausencia_cuidar_enfermos','beneficios_pobreza','beneficios_igualdad','beneficios_fam_trabajo'))
+```
+
+## Caracterización y descripción de grupos {.tiny}
+
+Tenemos unas variables que están en escala 1-5 y otras 1-10. 
+Normalizamos dividiendo cada pregunta por
+su máximo (dividir entre 10 las preguntas en escala de 1 a 10 y entre 5 las de 1 a 5):
+
+```{r}
+dat.2 <- dat %>% 
+  gather(var, valor, gvjbevn:sbcwkfm) %>% 
+  left_join(nombres) %>%
+  dplyr::select(-var) %>%
+  group_by(nombre) %>%
+  mutate(valor.esc = valor/max(valor, na.rm=T)) %>%
+  dplyr::select(-valor) %>%
+  spread(nombre, valor.esc)
+dat.3 <- filter(dat.2, apply(dat.2, 1, function(x){!any(is.na(x))}))
+dat.na <- filter(ess4.gb, apply(dat.2, 1, function(x){any(is.na(x))}))
+```
+
+## Caracterización y descripción de grupos {.tiny}
+
+Despues de normalizar, vemos cuantos grupos seria apropiado generar
+
+```{r, fig.height=3, fig.width=5}
+ajustes.km <- lapply(1:10, function(k){
+  kmedias <- kmeans(dat.3[,-1], centers = k, nstart = 20, iter.max=40)    
+  kmedias
+})
+tot.within <- sapply(ajustes.km, function(aj){ aj$tot.withinss})
+qplot(1:length(tot.within), tot.within, geom='line') + geom_point()
+
+```
+
+## Caracterización y descripción de grupos {.smaller}
+
+Veamos la solución de 5 grupos:
+
+```{r}
+sol.cl <- ajustes.km[[5]]
+table(sol.cl$cluster)
+```
+
+Todos los grupos tienen tamaño razonable. No queremos tener grupos muy chicos, **pues entonces es difícil caracterizarlos o entenderlos**: si hay 15 personas en un grupo, cualquier resumen de este grupo estaría sujeto a variación muestral alta.
+
+## Caracterización y descripción de grupos {.smaller}
+
+Veamos los grupos frente a variables originales para interpretar.
+
+```{r, echo = F, fig.width=5, fig.height=3}
+cluster.df <- data.frame(idno = dat.3$idno, cluster = sol.cl$cluster)
+dat.4 <- dat.3 %>% 
+  gather(variable, valor, ausencia_cuidar_enfermos:trabajo_a_todos) %>%
+  left_join(cluster.df)
+resumen.1 <- dat.4 %>% group_by(cluster, variable) %>%
+  summarise(media = mean(valor), ee = sd(valor)/sqrt(length(valor)))
+## adicionalmente, invertimos las 3 preguntas en escala de 1 a 5, pues 1 representa mayor acuerdo. 
+filtro <- resumen.1$variable %in% c('beneficios_fam_trabajo','beneficios_igualdad','beneficios_pobreza')
+resumen.1$media[filtro] <- 1-resumen.1$media[filtro]
+resumen.1$variable <- reorder(resumen.1$variable, resumen.1$media, mean)
+ggplot(resumen.1, aes(x=variable, y=media, ymin=media-ee, ymax=media+ee,
+                      colour=factor(cluster), group=cluster)) + geom_point() +
+  coord_flip() + geom_line() + geom_linerange()
+```
+
+## Caracterización y descripción de grupos {.smaller}
+
+Y es especialmente útil perfilar los grupos, es decir, mostrar las diferencias en cada variable en lugar de los promedios simples:
+
+```{r, echo=F, fig.width=5, fig.height=3}
+resumen.2 <- resumen.1 %>% group_by(variable) %>%
+  mutate(perfil = media -mean(media))
+
+ggplot(resumen.2, aes(x=variable, y=perfil, 
+                      colour=factor(cluster), group=cluster)) + geom_point() +
+  coord_flip() + geom_line() 
+```
+
+## Caracterización y descripción de grupos {.smaller}
+
+```{r, echo=F, fig.width=7, fig.height=4}
+ggplot(resumen.2, aes(x=variable, y=perfil, 
+                      colour=factor(cluster), group=cluster)) + geom_point() +
+  coord_flip() + geom_line() + facet_wrap(~cluster) + geom_hline(yintercept=0, colour='gray')
+```
+
+## Caracterización y descripción de grupos {.smaller}
+
+```{r}
+tab <- table(ess4.gb$stratval)
+names(tab[tab > 50])
+# tab.1 <- data.frame(
+#   round(100*prop.table(table(dat.na$stratval, sol.cl$cluster),margin=2),2)
+#   )
+# tab.2 <- tab.1 %>% group_by(Var1) %>%
+#   mutate(perfil = Freq/mean(Freq))
+# tab.3 <- tab.2 %>% select(-Freq) %>%spread(Var2, perfil) %>% arrange(`5`) %>% data.frame
+# tab.3[tab.3$Var1 %in% names(tab[tab > 50]),]
+```

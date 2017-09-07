@@ -1,0 +1,373 @@
+---
+title: "Métodos de remuestreo"
+author: "Andrea Fernandez"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+css: estilos.css
+bibliography: bib.bib
+in_header: mypackages.sty
+output: 
+  beamer_presentation:
+    incremental: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F)
+library(readr)
+library(ggplot2)
+library(stargazer)
+library(tidyverse)
+```
+
+## Introducción
+
+- Herramienta indispensable para hacer estadística moderna.
+- Extraer muestras en forma repetida de un conjunto de entrenamiento y ajustar
+para cada una de las muestras el modelo de interés. 
+- Se obtiene así *información adicional* con cada muestra acerca del modelo
+ajustado.
+- Nos permite examinar en qué medida los resultados de nuestro ajuste difieren
+ante datos de entrenamiento distintos.
+
+## ¿Por qué no se usaban antes?
+
+- Es computacionalmente intenso.
+- Dados los avances en poder de cómputo y en el desarrollo del cómputo en
+paralelo *ya no es tan restrictivo* el problema del cómputo.
+
+## Métodos
+
+Existen muchos métodos de remuestreo, por lo pronto examinaremos fundamnetalmente
+dos:
+
+1. Validación cruzada: útil para estimar el error de prueba asociado a un método. 
+Permite evaluar cuán bueno es y cuál es el nivel de flexibilidad apropiado.
+    - *Evalución del modelo* (model assessment) es el proceso en el que se evalúa
+    el desempeño de un modelo 
+    - *Selección de modelo* (model selection) es el proceso a través del cuál
+    se selecciona el nivel de flexibilidad apropiado 
+2. Bootstrap: su uso más común es para proveer de una medida de la precisión
+de un parámetro estiamdo a partir de un método estadístico.
+
+## Conjunto de prueba
+
+$\text{Error de entrenamiento} \neq \text{Error de prueba}$
+
+- El error de prueba el la media del error al utilizar un modelo ajustado en datos
+nuevos.
+- Dado un conjunto de datos, se garantiza que el desempeño de un método será
+*bueno* si resulta en errores de prueba bajos.
+- Puede calcularse fácilmente cuado *existe un conjunto de prueba*.
+- No siempre es el caso.
+
+## Error de entrenamiento
+
+Es fácilmente calculable pero, ¿cuáles eran los problemas de medir el error 
+en el conjunto de entrenamiento?
+
+El error en entrenamiento tiende a:
+
+- Ser muy diferente al error de prueba
+- Tiende a subestimar el error de prueba
+
+## Soluciones posibles 
+
+Dado que no siempre se tiene un conjunto de prueba, se puede estimar el error
+de prueba usando los datos a nuestra disposición.
+
+- *Ajuste del error de entrenamiento*. Algunos métodos ajustan el error de 
+entrenamiento para estimar el error de prueba.
+- *Holding out*. Otra clase de métodos estima el error de prueba reteniendo
+un subconjunto de los datos al ajustar el modelo y aplica ese método a las
+observaciones retenidas.
+
+=> Por ahora, nos concentramos en la segunda clase.
+
+## Midiendo el error en un conjunto de prueba
+
+1. Dividimos aleatoriamente nuestro conjunto de datos en dos: uno de 
+entrenamiento y uno de prueba.
+2. Ajustamos el modelo en los datos de entrenamiento.
+3. Escogemos una medida del error.
+4. Evaluamos el error en el conjunto de prueba.
+
+## El ejemplo de los coches 
+
+\tiny
+
+```{r, echo = F, results = "asis"}
+Auto <- read_csv("http://www-bcf.usc.edu/~gareth/ISL/Auto.csv") %>%
+  mutate(horsepower = as.numeric(horsepower))
+
+Auto <- mutate(Auto,
+               horsepower.2 = horsepower * horsepower,
+               horsepower.3 = horsepower.2 * horsepower)
+
+mod.1 <- lm(data = Auto, mpg ~ horsepower)
+mod.2 <- lm(data = Auto, mpg ~ horsepower + horsepower.2)
+mod.3 <- lm(data = Auto, mpg ~ horsepower + horsepower.2 + horsepower.3)
+
+stargazer(mod.1, mod.2, mod.3, type = "latex", header = F, dep.var.caption = "", title = "Modelo lineal, cuadrático y cúbico.")
+```
+
+¿Cuál es el mejor modelo? ¿Significancia?
+
+## Evaluamos con un conjunto de prueba
+
+```{r, echo = F}
+Auto <- mutate(Auto,
+               horsepower.4 = horsepower.3 * horsepower,
+               horsepower.5 = horsepower.4 * horsepower,
+               horsepower.6 = horsepower.5 * horsepower,
+               horsepower.7 = horsepower.6 * horsepower,
+               horsepower.8 = horsepower.7 * horsepower,
+               horsepower.9 = horsepower.8 * horsepower,
+               horsepower.10 = horsepower.9 * horsepower)
+Auto <- na.exclude(Auto)
+
+set.seed(2811)
+
+indices <- sample(seq(nrow(Auto)), ceiling(nrow(Auto)/2))
+entrena <- Auto[indices, ]
+prueba <- Auto[-indices, ]
+
+vars <- paste0("horsepower.", 2:10)
+formulas.mods <- "mpg ~ horsepower"
+
+modelos <- list("horsepower" = lm(data = entrena, as.formula(formulas.mods)))
+for ( e in vars ) {
+  formulas.mods <- paste0(formulas.mods, " + ", e)
+  modelos[[e]] <- lm(data = entrena, as.formula(formulas.mods))
+}
+
+# mse en PRUEBA
+mse <- function(modelo, datos.prueba) {
+  datos.prueba$prediccion <- predict(modelo, newdata = datos.prueba)
+  datos.prueba$residual <- datos.prueba$mpg - datos.prueba$prediccion
+  mean(datos.prueba$residual^2)
+}
+
+graf <- tibble(grado = seq(10), mse = sapply(modelos, FUN = function(m){mse(m, prueba)}, simplify = T))
+ggplot(graf, aes(x = grado, y = mse)) + geom_line() +
+  scale_x_continuous(breaks = graf$grado)
+```
+
+## Ejercicio
+
+1. Repite el ejercicio de los grados del polinomio pero generando aleatoriamente
+10 conjuntos de prueba y entrenamiento *distintos*.
+2. Grafícalo.
+
+## Respuesta
+
+```{r, echo = F}
+mse <- function(modelo, datos.prueba) {
+  datos.prueba$prediccion <- predict(modelo, newdata = datos.prueba)
+  datos.prueba$residual <- datos.prueba$mpg - datos.prueba$prediccion
+  mean(datos.prueba$residual^2)
+}
+una.corrida <- function(nombre = "") {
+  indices <- sample(seq(nrow(Auto)), ceiling(nrow(Auto)/2))
+  entrena <- Auto[indices, ]
+  prueba <- Auto[-indices, ]
+  
+  vars <- paste0("horsepower.", 2:10)
+  formulas.mods <- "mpg ~ horsepower"
+  
+  modelos <- list("horsepower" = lm(data = entrena, as.formula(formulas.mods)))
+  for ( e in vars ) {
+    formulas.mods <- paste0(formulas.mods, " + ", e)
+    modelos[[e]] <- lm(data = entrena, as.formula(formulas.mods))
+  }
+
+  graf <- tibble(grado = seq(10), mse = sapply(modelos, FUN = function(m){mse(m, prueba)}, simplify = T))
+  if (nombre != "") graf$corrida <- nombre
+  graf
+}
+
+corridas <- lapply(seq(10), FUN = function(x){una.corrida(x)})
+df.corr <- Reduce('rbind', corridas)
+
+## 2 - graficalo
+ggplot(df.corr %>% mutate(corrida = as.factor(corrida)), aes(x = grado, y = mse, group = corrida, color = corrida)) + 
+  geom_line() + ylim(16, 25) +
+  scale_x_continuous(breaks = graf$grado)
+```
+
+
+## Problemas de usar un conjunto de prueba
+
+Del ejercicio anterior podemos ver que:
+
+- El estimador del error de prueba es muy variable pues depende de qué observaciones
+entraron en el conjunto de entrenamiento.
+- Usamos únicamente un subconjunto de las observaciones a nuestra disposición.
+Los métodos estadísticos tienden a ser mejores con más observaciones y, por ende,
+sobreestimamos el error de prueba con respecto a si usamos todo el conjunto de 
+datos.
+- **Validación cruzada** busca minimizar estos dos problemas.
+
+## Leave-one-out cross-validation (LOOCV)
+
+1. Dividimos nuestro conjunto de datos en dos: uno de entrenamiento y uno de 
+prueba. El segundo lo formamos de una única observación.
+2. Ajustamos el modelo en los datos de entrenamiento ($n-1$ observaciones).
+3. Predecimos $\hat{y_i}$ de la observación excluida.
+4. Calculamos $MSE_i = (y_i - \hat{y_i})^2$
+5. Lo repetimos para las n observaciones para obtener $MSE_1, ..., MSE_n$.
+6. El estimador del $MSE_{prueba}$ por LOOCV es el promedio de estos n cálculos de
+error.
+\[
+CV_{(n)} = \frac{1}{n}\sum_{i=1}^n MSE_i
+\]
+
+## LOOCV: ventajas y desventajas
+
+- **Ventajas**
+    - Tiene menos sesgo. LOOCV tiende a no sobreestimar el error de prueba tanto como 
+    cuando usamos un solo conjunto de prueba.
+    - Realizarlo múltiples veces siempre da el mismo resultado pues la asignación
+    en prueba y validación no es aleatoria.
+- **Desventajas**
+    - Dificil de implementar pues consume mucho poder de cómputo.
+    - Si $n$ es grande, y cada modelo toma mucho tiempo en entrenar el problema
+    se multiplica.
+    
+## LOOCV: Ejercicio
+
+1. Aplica LOOVC a los datos de `Auto` en el caso cuadrático.
+2. Calcula el estimador $CV_{(n)}$
+3. Para el caso de regresión por mínimos cuadrados o regresión polinomial
+(**únicamente**), se cumple que:
+\[
+CV_{(n)} = \frac{1}{n}\sum_{i=1}^n (\frac{y_i - \hat{y_i}}{1-h_i})^2
+\]
+Calcula el estimador usando la fórmula.
+
+## Respuesta
+
+```{r}
+# 1
+Auto <- read_csv("http://www-bcf.usc.edu/~gareth/ISL/Auto.csv") %>%
+  mutate(horsepower = as.numeric(horsepower))
+
+Auto <- mutate(Auto,
+               horsepower.2 = horsepower * horsepower) %>%
+  na.exclude()
+
+una.corrida <- function(i){
+  mod <- lm(mpg ~ horsepower + horsepower^2, data = Auto[-i, ])
+  prediccion <- predict(mod, newdata = Auto[i, ])
+  residual.2 <- (Auto[i, ]$mpg - prediccion)^2
+  residual.2
+}
+
+mses <- sapply(seq(nrow(Auto)), FUN = function(i){una.corrida(i)})
+
+# 2
+cv_n <- mean(mses)
+
+# 3 
+mod <- lm(mpg ~ horsepower + horsepower^2, data = Auto)
+Auto$hat <- hatvalues(mod)
+Auto$prediccion <- predict(mod, newdata = Auto)
+Auto$residual <- 
+Auto <- Auto %>%
+  mutate(hat = hatvalues(mod)
+         , prediccion = predict(mod, newdata = Auto)
+         , residual = (mpg-prediccion)
+         , aux = residual/(1-hat)
+         , aux = aux^2)
+
+sum(Auto$aux)/nrow(Auto)
+# comparamos
+cv_n
+```
+
+$CV_{(n)} = \frac{1}{n}\sum_{i=1}^n (\frac{y_i - \hat{y_i}}{1-h_i})^2$
+
+
+## k-fold cross-validation
+
+1. Dividimos nuestro conjunto de datos en forma aleatoria en $k$ subconjuntos
+de más o menos el mismo tamaño.
+2. Tratamos a cada uno de los $k$ subconjuntos como un conjunto de prueba en 
+iteraciones independientes. Es decir, para cada subconjunto, ajustamos un modelo
+con el resto de los datos divididos en los $k-1$ grupos y usamos las observaciones
+en el grupo $k$ como prueba.
+3. Repetimos el proceso $k$ veces (para cada grupo de observaciones).
+4. Generamos $k$ estimadores del error de prueba $MSE_1, ..., MSE_k$.
+6. El estimador del $MSE_{prueba}$ por validación cruzada es el promedio de estos 
+$k$ cálculos de error.
+\[
+CV_{(k)} = \frac{1}{k}\sum_{i=1}^k MSE_i
+\]
+Nota como LOOCV es un caso particular de k-fold CV en donde $k = n$
+
+## Validación cruzada: ventajas y desventajas
+
+- **Ventajas**
+    - Ventaja computacional sobre LOOVC
+    - Método general que puede ser aplicado a casi cualquier método de aprendizaje
+    estadístico.
+- **Desventajas**
+    - Hay variabilidad en el estimador del error de prueba debido a como se
+    distribuyen las observaciones en los k-grupos. Esta variabilidad es menor que 
+    la que te da un estimador donde aleatoriamente divides el conjunto de datos en 
+    prueba y entrenamiento.
+    - Hay sobre o subestimación del error de prueba mientras cambia la flexibilidad de los modelos utilizados.
+    
+## Validación cruzada: para qué sirve
+
+- Se utiliza cuando nuestro objetivo es determinar cuán bueno podemos esperar
+que sea un método de aprendizaje específico para predecir nuevos datos. En este 
+caso el valor del estimador del error es de interés.
+- Se utiliza también cuando es de interés conocer el menor valor del error
+para contrastar entre distintos métodos posibles. En este caso, no interesa
+tanto el valor del estimador sino encontrar en dónde se encuentra el mínimo error, 
+es decir, la flexibilidad del modelo.
+
+## Trade-off entre sesgo y varianza
+
+- LOOCV tiene ventajas sobre K-fold CV pues genera estimadores menos sesgados.
+- K-fold tiene la ventaja que es menos intensivo computacionalmente.
+- También tiene otra ventaja aún más importante: en la mayoría de los casos
+da estimadores más precisos del error de prueba. Esto es por el *trade-off*
+que existe entre sesgo y varianza.
+- Típicamente, se usa $k=5$ o $k = 10$.
+
+## Trade-off entre sesgo y varianza
+
+- **Sesgo**
+    - Cuando usamos un conjunto 50-50 de validación y entrenamiento, tenemos
+    una sobreestimación del error de prueba: estamos usando menos observaciones (es como
+    desperdiciar información y siempre a más info, menos sesgo)
+    - LOOCV da estimadores más o menos insesgados del error de prueba pues usamos
+    casi todas las observaciones que tenemos.
+    - k-fold da un nivel de sesgo intermedio entre validación y LOOCV. 
+
+## Trade-off entre sesgo y varianza
+
+- **Varianza**
+    - LOOCV es un procedimiento con mayor varianza.
+    - LOOCV genera n modelos que se entrenan con conjuntos de datos casi iguales.
+    - EStamos promediando el resultado de n modelos cuyos resultados están altamente correlacionados. 
+    - En k-fold promediamos k resultados que están menos correlacionados pues hay menos
+    intersección de las observaciones que se utilizan para entrenar cada modelo.
+    - La media de cantidades altamente correlacionadas tiene mayor varianza que 
+    la media de cantidades con menor correlación. 
+
+## Validación cruzada en problemas de clasificación
+
+- Para aplicarlo, simplemente cambiamos la medida del error. 
+- Para regresión, estabamos usando MSE. Ahora usamos, por ejemplo, el número 
+de observaciones mal clasificadas. 
+- El estimador LOOCV toma la forma:
+\[
+CV_{(n)} = \frac{1}{n}\sum_{i=1}^n Error_i
+\]
+donde $Error_i = I(y_i \neq \hat{y_i})$. Se define de forma análoga el estimador
+por k-fold CV.
+
+
+
+

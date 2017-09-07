@@ -1,0 +1,209 @@
+---
+title: "Introducción"
+author: "Andrea Fernandez"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+css: estilos.css
+bibliography: bib.bib
+in_header: mypackages.sty
+output: 
+  html_document:
+    toc: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F)
+```
+
+# Introducción
+
+## Objetivo del módulo
+
+Aprenderás qué se consideran los algoritmos del estado del arte en ML y 
+practicarás el uso 
+de algunos de los algoritmos más comunes. 
+
+Cada algoritmo lo abordaremos de manera que sea posible entender problemas
+clásicos que se buscaban resolver.
+
+No nos enfocaremos tanto en los aspectos técnicos detrás de los métodos 
+(no vamos a demostrar propiedades) sino en la aplicación de los mismos.
+
+## Lecturas/Material de apoyo
+
+El libro que seguiremos será `Introduction to Statistical Learning` [@isl].
+La estructura del módulo está basado en el curso de @ng.
+Otras lecturas:
+
+- @mitchell
+- @bishop
+
+# Definiciones 
+
+En este módulo se mezclarán conceptos, técnicas y libros que provienen de 
+dos disciplinas distintas: aprendizaje de máquina y estadística. El primero
+se abordará fundamentalmente con la perspectiva de @mitchell y segundo
+se abordará desde la perspectiva del libro base [@isl]. Aunque para muchos
+estas disciplinas *build on top of each other* y han adoptado métodos y técnicas
+la una de la otra, hay ciertas distinciones en la forma en la que hacen 
+investigación, los temas de mayor interés y la forma en que comparten resultados.
+
+## ¿Qué es aprendizaje estadístico?
+
+Se refiere a un conjunto de herramientas útiles para entender datos.
+
+## ¿Qué es aprendizaje de máquina? (ML)
+
+Algunos ejemplos de aprendizaje de máquina:
+
+- Detección de spam en correo electrónico
+- Detección de personas en una foto en facebook
+- El buscador de google es tan bueno pues tiene un algoritmo detrás que filtra 
+por relevancia
+- Self-driving cars
+- Sistemas de recomendación de películas, libros, etc.
+- Predicción de fraude en tarjetas de crédito
+- Predicción de buenos pagadores de créditos
+- Sistemas de recomendación para clientes para productos financieros
+- Seguridad para los clientes: más allá de las contraseñas, utilizar datos biométricos
+
+### Una definición sencilla {#importante}
+
+Es la ciencia de enseñar a la computadora sin programarla explícitamente. 
+
+###
+
+ML utiliza conceptos y resultados de múltiples disciplinas, entre ellas, 
+estadística, inteligencia artificial, filosofía, teoría de la información (*information theory*),
+biología, complejidad computacional, teoría de control y ciencias cognitivas [@mitchell, p. xv].
+
+## Problemas de aprendizaje bien definidos
+
+Un programa de computadora aprende de una experiencia (E) con respecto a 
+una tarea (T) y una medida de rendimiento (M) si su rendimientto en la tarea (T),
+medida con (M), si mejora la experiencia (E) [@mitchell, p. 2].
+
+Puede ejemplificarse con el juego Go:
+
+- M = Habilidad de ganar
+- E = jugar partidas contra si mismo
+- T = Movimientos del juego
+
+Para tener un problema de aprendizaje bien definido, es necesario identificar
+su MET.
+
+En marzo de 2016 un programa (desarrollado por Google) venció a Lee Sedol, 
+maestro del juego coreano [@go].
+
+### Ejercicio {#ejercicio}
+
+Identifica el MET para los problemas siguientes:
+
+- Reconocimiento de manoescrita
+- Autos que se conducen autónomomamente
+
+Estos ejemplos están en @mitchell [p. 3-4]
+
+Plantea tres problemas en tu área que podrían resolverse de esta forma.
+
+## Un poco de historia
+
+El aprendizaje estadístico se basa en disciplinas que fueron desarrolladas 
+hace mucho tiempo.
+
+- Principios del s. XIX
+    - Legendre y Gauss desarrollan el método de mínimos cuadrados, la primera
+    versión de la regresión lineal. La regresión lineal permite predecir
+    valores continuos de una variable de interés.
+    - En 1936, Fisher propone una manera de hacer lo mismo con datos categóricos,
+    conocida como el análisis discriminante.
+    - En 1940, se desarrolla la regresión logística
+    - En 1970, Nelder y Wedderburn desarrollan los modelos lineales generalizados. Estos
+    son toda una clase de modelos lineales que tienen como caso particular a
+    la regresión lineal y la logística.
+    - Finales de los 70s, ya hay una gran cantidad de modelos, particularmente
+    modelos lineales. Ajustar modelos no lineales era aún computacionalmente
+    infactible.
+    - A mediados de los 80, Breiman, Friedman, Olshen y Stone introducen 
+    los árboles para clasificación y regresión.
+    - En 1986, Hastie y Tibshirani extienden los modelos lineales generalizados 
+    creando una clase de modelos no lineales, nombrándolos modelos aditivos 
+    generalizados.
+    - Con la influencia de ML, surge el aprendizaje estadístico como un área
+    dentro de estadística enfocada en modelos supervisados y no supervisados
+    para modelar y predecir datos.
+    
+El aprendizaje de máquina, tiene [una historia un poco separada](http://sge.wonderville.ca/machinelearning/history/history.html)
+
+# Notación
+
+Nos apegaremos a la notación del libro base [@isl, p. 9-12]:
+
+- $n =$ número de observaciones en la muestra
+- $p =$ número de variables disponibles para modelar
+- $x_{ij} =$ representa el valor de la j-ésima variable para la i-ésima 
+observación donde $i = 1, 2, ..., n$ y $j = 1, 2, ..., p$.
+- **X** denotará una matriz $n x p$ en donde el elemento $(i, j)$ es $x_{ij}$
+
+\[
+\boldsymbol{X} =
+  \begin{bmatrix}
+    x_{11} & x_{12} & ... & x_{1p} \\
+    x_{11} & x_{12} & ... & x_{1p} \\
+    . & . & .   & . \\
+    . & . & .   & . \\
+    . & . & .   & . \\
+    x_{n1} & x_{n2} & ... & x_{np} 
+  \end{bmatrix}
+\]
+
+- Para denotar las filas de **X**, se escribe $x_1, x_2, ..., x_n$. Donde 
+$x_i$ es un vector de longitud $p$, es decir contiene los $p$ valores de las
+$p$ variables para la observación i-ésima.
+- Para denotar las columnas de **X**, se escribe $\boldsymbol{x_1}, \boldsymbol{x_2}, ..., \boldsymbol{x_p}$. Donde 
+$\boldsymbol{x_i}$ es un vector de longitud $n$, es decir contiene los $n$ valores de las
+variable j-ésima.
+
+### Ejercicio {#ejercicio}
+
+Utiliza la base de datos `Wage` del paquete `ISLR` para definir en ese caso
+$n$, $p$ y **X**.
+
+###
+
+- $\boldsymbol{X^T}$ denota la transpuesta de la matriz $\boldsymbol{X}$
+- $y_i =$ denota la i-esima observación de la variable que decidimos predecir.
+Por ejemplo, el salario (wage) en la base de datos del ejercicio anterior.
+- Nuestros datos observados consisten de ${(x_1, y_1), (x_2, y_2), ..., (x_n, y_n)}$
+donde $x_i$ es un vector de dimensión $p$
+- Las matrices se denotarán con mayúsculas y negritas $\boldsymbol{A}$.
+- Las variables aleatorias se denotarán con mayúsculas $X$.
+- Un escalar estará en minúsculas $k$
+- $a \in \mathbb{R}^k$ indica un vector $a$ de tamaño $k$
+- $\boldsymbol{a} \in \mathbb{R}^{m x k}$ es una matriz con m renglones y k columnas
+
+### Ejercicio {#ejercicio}
+
+Multiplica (en papel) las matrices **A** y **B**.
+
+\[
+\boldsymbol{A} =
+  \begin{bmatrix}
+    3 & 4 & 8 \\
+    3 & 2 & 1
+  \end{bmatrix}
+\]
+
+
+\[
+\boldsymbol{B} =
+  \begin{bmatrix}
+    2 & 4 \\
+    3 & 5 \\
+    2 & 1
+  \end{bmatrix}
+\]
+
+###
+
+## Bibliografía

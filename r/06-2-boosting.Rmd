@@ -1,0 +1,96 @@
+---
+title: "Boosting"
+author: "Andrea Fernandez"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+css: estilos.css
+output: 
+  html_document:
+    toc: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F)
+library(tidyverse)
+library(ISLR)
+library(ggplot2)
+library(dplyr)
+library(rpart)
+library(rpart.plot)
+library(ElemStatLearn)
+```
+
+Boosting es otro procedimiento que permite mejorar las predicciones. Igual que bagging, es un método general qu epuede ser aplicado a múltiples métodos de aprendizaje estadístico.
+
+Por ahora, lo utilizaremos en el contexto de árboles de decisión.
+
+Bagging implicaba crear múltiples versiones de un conjunto de datos de entrenamiento a través de bootstrap, generar un modelo separado para cada muestra y después combinar los modelos usando un único modelo de predicción. Por ejemplo, con árboles, cada árbol se construye con un conjunto de datos bootstrap en forma independiente.
+
+Boosting es muy similar pero en vez de hacerlo por separado, se hace en forma secuencial.
+
+Cada árbol se construye utilizando información de los árboles ajustados previamente. No se usa bootstrap para muestrear los datos sino que cada árbol se ajusta con una versión modificada de los datos originales.
+
+# La idea
+
+Pensemos en un contexto de regresión (es decir, una variable dependiente continua). 
+
+Si ajustamos un único árbol de decisión de gran profundidad, puede que tengamos un problema de overfitting.
+
+Boosting se la lleva tranquilo y se va ajustando a los datos lentamente.
+
+Empiezas con un árbol poco profundo. Dado ese árbol, se ajusta un nuevo árbol al *residual* del modelo anterior, en lugar de la $Y$ original. Y así sucesivamente...
+
+Cada uno de esos árboles puede ser bastante pequeño, con tan sólo algunos nodos terminales (estarán determinados por un parámetro que llamaermos $d$, por *depth*).
+
+Al ir ajustando nuevos y pequeños árboles a los residuales, iremos mejorando la predicción ahí donde $\hat{f}$ era malo. 
+
+Para hacer la cosa aún más lenta, podemos agregar un parámetro de regularización $\lambda$. Pero la idea sigue siendo que, con cada iteración, se ataca al *residual* del modelo anterior.
+
+**Importante**: a diferencia de bagging, en boosting la construcción de cada árbol depende fuertemente en los árboles anteriores. 
+
+# Algorítmicamente
+
+1. Empiezo con $\hat{f}(x) = 0$ y $r_i = y_i$ para toda observación $i$ en el conjunto de entrenamiento. (Esto es, no tengo ninguna función y el residual a atacar es la variable dependiente completa.)
+
+2. Para $b = 1, 2, ... B$, repito los siguientes pasos:
+
+    a. Ajusto un árbol $\hat{f}^b$ con $d$ nodos (*splits*), es decir, con $d+1$ nodos terminales a los datos de entrenamiento $(X, r)$.
+    b. Actualizo la función $\hat{f}$ agregando una versión regularizada del nuevo árbol:
+    \[
+    \hat{f}(x) \leftarrow \hat{f}(x) + \lambda \hat{f}^b(x)
+    \]
+    c. Actualizo los residuales (para poder atacar únicamente el residual del modelo anterior):
+    \[
+    r_i \leftarrow r_i - \lambda \hat{f}^b(x)
+    \]
+    
+3. El modelo por boosting es:
+\[
+\hat{f}(x) = \sum_{b=1}^B \lambda \hat{f}^b(x)
+\]
+
+Los parámetros de boosting son:
+
+1. El número de árboles $B$. En boosting si se puede tener overfitting si $B$ es muy grande (a diferencia de bagging o random forests). Se utiliza validación cruzada para elegir $B$.
+2. El parámetro de regularización $\lambda$ controla la tasa de aprendizaje que se le permite a cada iteración del algoritmo. Los valores típicos son 0.01 o 0.001. La elección de este parámetro depende del problema. Un valor muy pequeño de $\lambda$ puede requerir un valor muy grande de $B$ para obtener un buen modelo predictivo.
+3. El número de nodos $d$ que se permite en cada iteración. Controla la complejidad del ensamblado de boosting. A veces $d=1$ funciona bien. Este caso es realmente un modelo aditivo pues cada término de la $\hat{f}$ involucra una única variable. En general, $d$ es la profundidad de las interacciones y controla que tanto interaccionan las variables en el modelo por boosting pues $d$ nodos involucran a lo más $d$ variables.
+
+# Ejemplo
+Para entender mejor la manera en la que funciona boosting [seguiremos este ejemplo](https://www.r-bloggers.com/an-attempt-to-understand-boosting-algorithms/).
+
+# Ejercicio
+
+Utiliza los datos de muestra a continuación para implementar el algoritmo 
+ejemplificado arriba. 
+
+```{r}
+sim_datos <- function(n, p){
+    dat.x <- data.frame(matrix(rnorm(n*p, 0, 1), ncol=p))
+    y <- apply(dat.x, 1, function(x){sum(x^2)})
+    data.frame(dat.x, y)
+}
+set.seed(2008)
+datos <- sim_datos(5000, 10)
+
+```
+

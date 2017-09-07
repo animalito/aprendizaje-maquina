@@ -1,0 +1,78 @@
+---
+title: "Selección de variables"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+author: "Miguel Angel Escalante Serrato"
+css: estilos.css
+output: 
+  html_document:
+    toc: 1
+    toc_float: yes
+---
+
+```{r, include=F}
+set.seed(42)
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F)
+##rmarkdown::render('06-2-subset-selection.Rmd')
+```
+
+---
+
+# Introducción 
+
+Como ya hemos visto, muchas veces nos enfrentamos al problema de demasiadas variables predictoras y necesitamos disminuír el número de variables; hay al menos dos razones para disminuír nuestro número de variables: 
+
+- Mejorar la predicción al detener el sobre ajuste en la muestra, aumentamos un poco el sesgo pero al disminuír la varianza, nuestra predicción general mejorará. 
+- Interpretación, cuando tenemos muchos predictores, usualmente querremos ver un subconjunto de los mismos que refleje los efectos más fuertes del modelo. Para tener una visión general estamos dispuestos a perder algunos detalles. 
+
+Para el modelo lineal, retenemos un subconjunto de las variables y eliminamos el resto del modelo, para hacerlo tenemos algunas estrategias. 
+
+# Mejor Subconjunto
+
+El mejor subconjunto, se corren todos los posibles modelos con todas las variables, y subconjuntos de las mismas y nos quedamos con el mejor modelo (bajo el criterio que decidan). Esto es, para cada $k \in \lbrace 0,1,...,0\rbrace$ correr todos los posibles modelos. 
+
+## Ejercicio {#ejemplo}
+Programen un algoritmo para encontrar ese modelo. Pruébenlo con los datos de cáncer de próstata. 
+
+```{r}
+library(lasso2)
+data(Prostate)
+head(Prostate)
+```
+
+# Forward-Backward Stepwise Selection
+
+En lugar de correr todos los modelos, que se vuelve virtualmente imposible para $p$ grande (40), podemos encontrar una manera de elegir los modelos de manera más inteligente. 
+
+## Forward Stepwise Selection
+
+Es un poco indicativo el nombre pero cuando hacemos selección hacia adelante, empezamos con sólo la constante como predictor, luego de todas las variables que tengamos agregamos al modelo la que más ayude a nuestra métrica del error (de nuevo, dependiendo la que se use).
+Este es un algoritmo *greedy*, donde sólo vamos agregando una variable a la vez; este algoritmo puede que no nos dé el mejor conjunto de variables predictoras, pero hay distintas razones por las cuales podríamos preferirlo: 
+
+- Cómputo, si $p>40$ es muy complicado hacer el cálculo de todos los modelos. 
+- Estadística, cuando seleccionamos el mejor modelo, estamos pagando con varianza nuestra disminución en el sesgo, mientras que cuando hacemos la búsqueda incremental, estamos acotando el problema
+
+## Backward Stepwise Selection
+
+En este caso es al revés, sólo que en este caso partimos del modelo completo con las $p$ variables y vamos quitando variable por variable las que menos afecten nuestra predicción, (usualmente podemos quitar la variable con la menor z-score). 
+
+# Ejercicio {#ejemplo}
+
+Programen estos dos métodos, de nuevo pruébenlos con los datos de cáncer en próstata. 
+
+# Forward Stagewse Regression
+
+Este método es un tanto más restrictivo que el método Forward Stepwise Selection. Lo que hacemos con éste método. Partiendo del modelo nulo, buscamos la variable que tenga mayor correlación con los residuales ($y-\bar{y}$), y se corre un modelo y se agrega al coeficiente actual, y se continúa agregando hasta que ya no haya correlación con las demás variables. 
+
+# Ejercicio {#ejemplo}
+
+De nuevo programen este método y pruébenlo con la base de datos de cáncer. 
+
+# Ejercicio {#ejercicio}
+
+Tomen los datos que usamos para los splines (`SAheart`), y con las variables genéricas generen todo el espacio de funciones para hacer un polinomio de grado 3, (incluyan interacciones). Con sus funciones anteriores, elijan el mejor modelo que puedan obtener; partan el conjunto en entrenamiento y prueba. Luego regularicen, y elijan el mejor parámetro por medio de validación cruzada. Al final reporten el error con la muestra de prueba. 
+
+```{r}
+library(ElemStatLearn)
+data(SAheart)
+head(SAheart)
+```

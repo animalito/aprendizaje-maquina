@@ -1,0 +1,22 @@
+#importante {
+padding: 20px;
+margin: 20px 0;
+border: 1px solid #eee;
+border-left-width: 0px;
+border-radius: 10px;
+border-left-color: #ce4844;
+  background-color: #ECA1A0;
+  font-size: 110%;
+}
+
+article.tiny p, article.tiny ul, article.tiny ol {
+    font-size: 10px;
+    letter-spacing: 0;
+    line-height: 12px;
+}
+
+article.tiny pre {
+    font-size: 10px;
+    letter-spacing: 0;
+    line-height: 12px;
+}

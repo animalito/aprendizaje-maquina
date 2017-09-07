@@ -1,0 +1,78 @@
+---
+title: "Ejercicio Bootstrap"
+output: html_document
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F)
+library(tidyverse)
+library(ggplot2)
+```
+
+Se realiza un experimento en el que se seleccionan 7 ratones de manera 
+aleatoria de un total de 16 ratones. A los siete seleccionados se les 
+suministra un tratamiento mientras que los restantes formarán el grupo de control. 
+El objetivo del tratamiento es prolongar la supervivencia de los ratones. L
+a siguiente tabla muestra el tiempo de supervivencia en días después de 
+suministrar el tratamiento.
+
+Tu objetivo es determinar si el tratamiento prolongó la supervivencia.
+
+Los datos:
+
+```{r}
+tratamiento <- c(94, 197, 16, 38, 99, 141, 23)
+control <- c(52, 104, 146, 10, 51, 30, 40, 27, 46)
+```
+
+1. Usa las medias de las muestras para determinar si hay diferencias en los grupos, esto es calcula $\overline{x} - \overline{y}$.
+
+```{r}
+mean(tratamiento) - mean(control)
+```
+
+2. Estima el error estándar de la diferencia usando bootsrap.
+
+```{r}
+mediaBoot <- function(x){ 
+  # x: variable de interés
+  # n: número de replicaciones bootstrap
+  n <- length(x)
+  muestra_boot <- sample(x, size = n, replace = TRUE)
+  mean(muestra_boot) # replicacion bootstrap de theta_gorro
+}
+means_boot_treatment <- rdply(10000, mediaBoot(tratamiento))
+means_boot_control <- rdply(10000, mediaBoot(control))
+difference <- means_boot_treatment$V1 - means_boot_control$V1
+sd(difference)
+```
+
+3. Corrobora tus resultados del punto anterior usando que $\hat{se}(\overline{x} - \overline{y}) = \sqrt{\hat{se}(\overline{x})^2 + \hat{se}(\overline{y})^2}$
+
+```{r}
+se <- function(x) sqrt(sum((x - mean(x)) ^ 2)) / length(x)
+check <- sqrt(se(tratamiento)^2 + se(control)^2)
+check
+```
+
+4. ¿Dirías que el tratamiento incrementó la supervivencia de los ratones?
+
+Si. La diferencia de medias entre tratamiento y control es mayor que cero (de forma positiva) aun considerando el error estandar (normal y bootstrap). Al menos para el 68% de los casos (solamente es positivamente distinta de cero si restamos una desviacion estandar, no dos).
+
+5. Supongamos que deseamos comparar los grupos usando las medianas en lugar de las medias, estima la diferencia de las medianas y usa bootstrap para estimar el error estándar de la diferencia. ¿Cuál es tu conclusión de los resultados?
+```{r}
+medianBoot <- function(x){ 
+  # x: variable de interés
+  # n: número de replicaciones bootstrap
+  n <- length(x)
+  muestra_boot <- sample(x, size = n, replace = TRUE)
+  median(muestra_boot) # replicacion bootstrap de theta_gorro
+}
+median_boot_treatment <- rdply(10000, medianBoot(tratamiento))
+median_boot_control <- rdply(10000, medianBoot(control))
+difference <- median_boot_treatment$V1 - median_boot_control$V1
+sd(difference)
+```
+
+Se sostienen los resultados al menos para una desviacion estandar. Lo cual sigue indicando que hay una diferencia no aleatoria entre las medias y medianas de los grupos.
+

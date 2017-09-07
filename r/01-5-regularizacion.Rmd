@@ -1,0 +1,279 @@
+---
+title: "Regularización"
+author: "Miguel Angel Escalante Serrato"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+output:
+  html_document:
+    toc: 2
+    toc_float: yes
+in_header: mypackages.sty
+css: estilos.css
+bibliography: bib.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F, cache = TRUE)
+library(magrittr)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(plyr)
+library(reshape2)
+```
+Código y ejercicios adaptados de clase de [Felipe Gonzalez](fg-clases.squarespace.com)
+
+Los coeficientes obtenidos en la regresión lineal y logística tienen propiedades que son deseables si los datos vienen de modelos lineales, son insesgados con respecto a los coeficientes "reales", la varianza es chica y las estimaciones convergen a los valores reales cuando el conjunto de entrenamiento es grande. 
+
+En la práctica no necesariamente nos encontramos con los ejercicios teóricos con los que construímos todo esto. 
+
+- La muestra puede ser pequeña, por lo que la convergencia es complicada. 
+- Podría ser mejor sesgar los coeficientes con tal de disminuír la varianza. 
+
+Primero generaremos un modelo lineal con el ruido correspondiente para poder entender lo que haremos. 
+
+Generamos el modelo "verdadero":
+
+```{r}
+h <- function(x){ exp(x) / (1 + exp(x))}
+set.seed(2805)
+beta <- rnorm(100,0,0.1)
+beta
+```
+
+Ahora generamos datos de entrenamiento y de prueba: 
+
+```{r}
+sim.1 <- function(n, m, p=100){
+  #n = casos de entrenamiento, m= casos de prueba, p=num variables
+  mat.entrena <- as.matrix(rdply(n, rnorm(p))[,-1]) + rnorm(p)
+  mat.prueba <- as.matrix(rdply(m, rnorm(p))[,-1]) + rnorm(p)
+  y.entrena = rbinom(n, 1, h(mat.entrena%*%beta))
+  y.prueba = rbinom(m, 1, h(mat.prueba%*%beta))
+  list(mat.entrena = mat.entrena, mat.prueba = mat.prueba, y.entrena=y.entrena, 
+    y.prueba=y.prueba)
+}
+salida <- sim.1(n=400, m=2000)
+names(salida)
+
+mod.1 <- glm.fit(x = salida$mat.entrena,
+                 y = salida$y.entrena, family = binomial())
+
+qplot(beta, mod.1$coefficients) + 
+  xlab('Coeficientes') + 
+  ylab('Coeficientes estimados') +
+  geom_abline(slope =1, intercept = 0) +
+  xlim(c(-0.4,0.4))+ ylim(c(-0.8,0.8))
+
+```
+
+Nuestras estimaciones no son muy buenas (si lo fueran deberían de estar alineadas a la identidad). Si volvemos a correr la simulación podremos ver algo interesante. 
+
+```{r}
+salida <- sim.1(n=400, m=2000)
+names(salida)
+
+mod.2 <- glm.fit(x = salida$mat.entrena,
+                 y = salida$y.entrena, family = binomial())
+
+qplot(beta, mod.2$coefficients) + 
+  xlab('Coeficientes') + 
+  ylab('Coeficientes estimados') +
+  geom_abline(intercept=0, slope =1) +
+  xlim(c(-0.4,0.4))+ ylim(c(-0.8,0.8))
+```
+
+Si repetimos el experimento varias veces (50, para ser exactos). Apreciamos que tenemos mucha varianza en los estimadores de los coeficientes: 
+
+```{r}
+dat.sim <- ldply(1:50, function(i){
+  salida.2 <- sim.1(n=400, m=10)
+  mod.2 <- glm.fit(x = salida.2$mat.entrena,
+                 y = salida.2$y.entrena, family = binomial())
+  data.frame(rep=i, vars=names(coef(mod.2)), coefs=coef(mod.2))
+})
+
+dat.sim$vars <- reorder(as.character(dat.sim$vars), dat.sim$coefs, median)
+ggplot(dat.sim, aes(x=vars, y=coefs)) + geom_boxplot() +
+  geom_line(data=data.frame(coefs=beta, vars=names(coef(mod.2))), 
+    aes(y=beta, group=1), col='red',size=1.1) + coord_flip()
+
+```
+
+En rojo los coeficientes reales.
+
+En este caso tenemos opción a simular tantas veces queramos nuestro modelo, sin embargo en la vida real muy probablemente se tendrán sólo una de estas muestras, por lo que se vuelve evidente la necesidad de una manera de controlar esta varianza. Ahora, esto ¿cómo afecta el rendimiento del modelo? Ojo que hasta ahora sólo hemos visto la relación entre los coeficientes y sus estimados; ahora veamos cómo se ven las estimaciónes, de probabilidad. 
+
+```{r}
+dat.entrena <- data.frame(prob.hat.1=h(mod.1$fitted.values), prob.1=h(salida$mat.entrena%*%beta),
+  clase = salida$y.entrena)
+dat.prueba <- data.frame(prob.hat.1=h(salida$mat.prueba%*%(mod.1$coefficients)), 
+  prob.1=h(salida$mat.prueba%*%beta),
+  clase = salida$y.prueba)
+ggplot(dat.entrena, aes(x=prob.1, y=prob.hat.1, colour=factor(clase))) + geom_point()
+ggplot(dat.prueba, aes(x=prob.1, y=prob.hat.1, colour=factor(clase))) + geom_point()
+
+```
+
+De nuevo si la estimación fuera perfecta, tendría que ser una línea recta. no es un problema de modelado ya que estamos usando el modelo ideal para estos datos **simulados**. El problema radica en la variabilidad de los coeficientes. Para evitar esto, podemos penalizar los coeficientes, de tal forma que no se adapten tanto a los datos. 
+$$\sum_{i=1}^{100} \beta_j^2 < 0.25,$$
+Para adaptarlo ahora usamos el paquete glmnet: 
+
+```{r}
+library(glmnet)
+mod.restringido <- glmnet(x=salida$mat.entrena, y=salida$y.entrena, 
+  alpha = 0,
+  family='binomial', intercept = F, 
+  lambda = 0.15)
+beta.restr <- coef(mod.restringido)[-1]
+
+```
+
+
+Veamos cómo se ven los coeficientes ahora: 
+
+```{r}
+qplot(beta, beta.restr) + 
+  xlab('Coeficientes') + 
+  ylab('Coeficientes estimados') +
+  geom_abline(intercept=0, slope =1) +
+  xlim(c(-0.3,0.3))+ ylim(c(-0.3,0.3))
+
+```
+
+Y las predicciones: 
+```{r}
+dat.entrena.r <- data.frame(prob.hat.1= h(salida$mat.entrena%*%as.numeric(beta.restr)), 
+  prob.1=h(salida$mat.entrena%*%beta),
+  clase = salida$y.entrena)
+dat.prueba.r <- data.frame(prob.hat.1=h(salida$mat.prueba%*%as.numeric(beta.restr)), 
+  prob.1=h(salida$mat.prueba%*%beta),
+  clase = salida$y.prueba)
+
+
+
+ggplot(dat.entrena.r, aes(x=prob.1, y=prob.hat.1, colour=factor(clase))) + geom_point()
+
+
+
+ggplot(dat.prueba.r, aes(x=prob.1, y=prob.hat.1, colour=factor(clase))) + geom_point()
+
+
+```
+
+¡Mucho mejor! 
+
+
+# Regularización ridge
+
+Arriba vimos un ejemplo de regresión penalizada tipo **ridge**. Recordemos que para regresión lineal, buscábamos minimizar la cantidad:
+
+$$D(\beta)=\frac{1}{n}\sum_{i=1}^n (y_i -\beta_0 - \sum_{j=1}^p \beta_j x_{ij})^2$$ 
+
+y en regresión logística,
+$$D(\beta)=-\frac{2}{n}\sum_{i=1}^n y_i log(h(\beta_0 - \sum_{j=1}^p \beta_j x_{ij})) + (1-y_i) log(1 - h(\beta_0 - \sum_{j=1}^p \beta_j x_{ij}))    ,$$
+donde los denotamos de la misma forma para unificar notación.
+
+En regresión **ridge** (lineal/logística), para $\lambda>0$ fija minimizamos
+$$D_{\lambda}^2 (\beta)=D(\beta)  + \lambda\sum_{i=1}^p \beta_j^2$$,
+donde suponemos que las entradas están estandarizadas (centradas y escaladas por
+la desviación estándar.
+
+## Observaciones
+
+- No restringimos los coeficientes como lo hicimos arriba, sólo le agregamos un término de penalización a nuestras funciones a optimizar.
+- Lo que se busca es estabilizar la estimación de los coeficientes, especialmente en los casos donde tenemos muchas variables a comparación de las observaciones que tenemos, la penalización detiene que varien mucho.
+- Cuando $\lambda$ es grande, los coeficientes se encogen más fuertemente, lo cual implica que se reduce la varianza, pero se aumenta el sesgo
+- Cuando $\lambda$ es más chico, los coeficientes son menos penalizados, por lo que quedan más cerca a las estimaciones no penalizadas, en este caso se reduce el sesgo pero se aumenta la varianza.
+- No tiene mucho sentido penalizar $\beta_0% aunque se puede hacer. 
+- Es importante tener estandarizadas las variables a la hora de penalizar, porque si se toman en cuenta escalas distintas, los coeficientes también están en distintas escalas, por lo que la penalización afecta de manera distinta a los coeficientes. 
+
+
+## Ejemplo {#ejemplo}
+
+Regresemos al ejemplo inicial con los coeficientes y analizenmos lo que ridge les hace. 
+```{r}
+mod.ridge <- glmnet(x=salida$mat.entrena, y=salida$y.entrena, 
+  alpha = 0,
+  family='binomial', intercept = F, nlambda=50)
+
+dim(coef(mod.ridge))
+plot(mod.ridge, xvar='lambda')
+```
+
+```{r}
+devianza  <- function(prob, y){
+  -2*mean(y*log(prob)+(1-y)*log(1-prob)    )
+}
+
+dat.r <- ldply(1:50, function(i){
+  dat.prueba.r <- data.frame(i=i, lambda=mod.ridge$lambda[i],
+    prob.hat.1=h(salida$mat.prueba%*%as.numeric(coef(mod.ridge)[,i][-1])), 
+  clase = salida$y.prueba)
+  dat.prueba.r
+})
+
+devianza.prueba <- ddply(dat.r, c('i','lambda'), summarise, 
+  dev = devianza(prob.hat.1, clase))
+qplot(log(devianza.prueba$lambda), devianza.prueba$dev)
+mod.ridge$lambda
+```
+Ahora tenemos que escojer la mejor lambda para el modelo ridge, (el que minimiza la devianza). 
+
+```{r}
+pred.prueba.final <- salida$mat.prueba%*%(coef(mod.ridge)[ , 40][-1])
+table(pred.prueba.final > 0.5, salida$y.prueba)
+prop.table(table(pred.prueba.final > 0.5, salida$y.prueba), margin=2)
+prop.table(table(pred.prueba.final > 0.1, salida$y.prueba), margin=2)
+
+```
+
+
+# Lasso
+
+Otra forma de regularizar es con el método lasso, que lo que hace es cambiar la penalización de la suma de cuadrados de los coeficientes por la suma de los valores absolutos de los mismos. 
+
+En regresión **lasso** (lineal/logística), para $\lambda>0$ fija minimizamos
+$$D_{\lambda}^2 (\beta)=D(\beta)  + \lambda\sum_{i=1}^p |\beta_j|$$,
+donde suponemos que las entradas están estandarizadas (centradas y escaladas por la desviación estándar).
+
+La intuición dice que las dos regularizaciones deberían de dar resultados similares, ya que se penaliza por el tamaño de los coeficientes, sin embargo hay una diferencia fundamental e interesante que hace que valga la pena diferenciarlos. 
+
+En la regresión lasso los coeficientes pueden hacerse 0: En la regresión ridge, los coeficientes se reducen gradualmente a cero, desde la solución sin restringir; por lo que ridge es un método de reducción de coeficientes. 
+
+Lasso por otro lado si encoge coeficientes, pero también excluye variables del modelo, por eso lasso es un método de encogimiento y de selección de variables. 
+
+# Ejemplo {#ejemplo}
+Tomemos los datos de nuevo de bodyfat y partamos la base de datos: 
+
+```{r}
+# leer acerca de los datos en el archivo info que acompaña.
+bodyfat <- read.table("./datos/bodyfat.txt",header=TRUE)
+names(bodyfat)
+nrow(bodyfat)
+# Separamos en muestra de entrenamiento y de prueba: el modelo
+# lo ajustamos con la de entrenamiento, y medimos el error de
+# predicción con la de prueba
+#Tamaño de muestra de entrenamiento 
+N <- 220
+set.seed(1989)
+bodyfat.2 <- bodyfat[ sample(1:nrow(bodyfat), nrow(bodyfat)), ]
+bodyfat.entrena <- bodyfat[1:N,]
+bodyfat.prueba <- bodyfat[(N+1):nrow(bodyfat), ]
+#eliminamos un caso que tiene una medición errónea de estatura
+bodyfat.entrena.2 <- bodyfat.entrena
+```
+
+Entrenamos un modelo lasso, (parámetro alpha), y podemos apreciar cómo van disminuyendo los coeficientes de golpe a cero. 
+```{r}
+#Ahora hacemos lasso: alpha =1
+modelos.lasso <- glmnet(x = as.matrix(bodyfat.entrena.2[, 3:15]),
+    y = bodyfat.entrena.2$grasacorp, alpha=1, family = "gaussian")
+
+#Aquí vemos cómo se encogen y salen variables conforme
+#aumentamos la penalización (escrita en norma -1)
+#plot(modelos.lasso)
+plot(modelos.lasso, xvar = "lambda")
+#podemos examinar el objeto lass:
+names(modelos.lasso)
+
+```

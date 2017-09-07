@@ -1,0 +1,222 @@
+---
+title: "Análisis de componentes principales"
+author: "Andrea Fernandez"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+output: 
+  ioslides_presentation:
+    css: ioslides.css
+    mathjax: local
+    self_contained: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, error = F, warning = F)
+library(stringdist)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+```
+
+# ACP
+
+Basados en notas de http://teresa-ortiz.squarespace.com/est-multivariada
+
+## Contexto
+
+Casos de variables latentes continuas.
+
+Motivación: los puntos realmente están en una dimensión menor que en la que los
+tenemos (e.g. ocupan más espacio del que necesitan). 
+
+Pensemos en imágenes, en particular usamos los dígitos de la base de datos [mnist](http://yann.lecun.com/exdb/mnist/) en donde en una matriz de $64x64$
+pixeles, se insertan dígitos. 
+
+<img src="img/digit_rotate.jpg" style="width: 600px;"/>
+
+## ACP {.smaller}
+
+El análisis de componentes principales (PCA) es una técnica que se utiliza 
+con distintos objetivos:
+
+1. Reducción de dimensionalidad.
+
+2. Compresión de información con pérdida (_lossy_).
+
+3. Extracción de características o (_features_).
+
+4. Visualización de datos.
+
+* PCA se puede definir como una proyección de los datos en un
+espacio de dimensión menor (conocido como subespacio principal), tal que 
+la varianza de los datos proyectados es máxima.
+
+* PCA se puede definir como la proyección lineal que minimiza el costo medio 
+de proyección, donde el costo promedio es la distancia media al cuadrado
+entre los puntos y sus proyecciones.
+
+## ACP: máxima varianza {.smaller}
+
+Consideremos un vector de observaciones $(y^1,...,y^n)$ donde $y_i$ es de 
+dimensión $d$. Nuestro objetivo es proyectar los datos en un espacio de 
+dimensión $M<D$ maximizando la varianza de la proyección.
+
+Básicamente, se calcula la varianza de los datos proyectados en un espacio de 
+dimensión menor. Se deriva e iguala a cero para extraer el máximo de donde se
+extrae que un punto estacionario está dado por el eigenvalor-eigenvector. 
+
+En particular, el eigenvalor mayor será el que más varianza capture.
+
+Al proyectar en más de una dimensión, se elige a cada paso subsecuente una
+*dirección nueva* que maximiza la varianza de la proyección sujeto a que sea
+ortogonal a las direcciones anteriores. Puede demostrarse que esta es la proyección
+óptima.
+
+## Aplicaciones: compresión 
+
+```{r}
+library(deepnet)
+mnist <- load.mnist("mnist")[["train"]]
+ind_tres <- mnist[[3]] == 3
+data_tres <- mnist[[2]][ind_tres, ]
+
+data_tres <- mnist[[2]][ind_tres, ]
+dim(data_tres)
+```
+
+## Aplicaciones: compresión 
+
+Como cada eigenvector es un vector en el espcio original de $D$ dimensiones 
+podemos representarlos como imágenes.
+
+```{r, fig.width=9.4, fig.height=2.5}
+data_tres <- mnist[[2]][ind_tres, ]
+tres_mean <- apply(data_tres, 2, mean)
+
+S <- cov(data_tres)
+eigen_S <- eigen(S)
+lambda <- eigen_S$values
+u <- eigen_S$vectors
+# par(mar=c(1,1,1,1))
+# par(mfrow=c(1,5))
+# imageD(tres_mean)
+# for(i in 1:4){
+#   imageD(u[, i])  
+# }
+```
+
+## Aplicaciones: compresión {.tiny}
+
+El resto de los eigenvalores en la gráfica de abajo. Graficamos 
+también la medida de distorsión $J$ asociada a la elección del número de 
+componentes $M$ (dada por la suma de los eigenvalores $M+1$ a $D$).
+
+```{r, fig.width=6, fig.height=4}
+D <- length(lambda)
+J <- sapply(1:D, function(i){sum(lambda[i:D])})
+par(mfrow=c(1,2))
+plot(lambda, type = "l")
+plot(J, type = "l")
+```
+
+## Aplicaciones: compresión 
+
+La compresión está en que reemplazamos cada vector de observaciones de dimensión 
+$D$ ($y_i$) por un vector de dimensión $M$.
+
+La siguiente figura muestra la compresión para distintos valores de $M$ del
+prmer dígito de la base de datos. 
+
+```{r, fig.width=9.4, fig.height=2.5}
+# tres_1 <- data_tres[3, ]
+# par(mfrow=c(1,5))
+# imageD(tres_1)
+# for(M in c(1, 10, 50, 300)){
+#   u_M <- u[, 1:M]
+#   y_M <- tres_1 %*% u_M
+#   y_approx <- tres_mean + y_M %*% t(u_M)
+#   imageD(y_approx)
+# }
+```
+
+## Aplicaciones: preprocesamiento
+
+Objetivo: no es la reducción de dimensión sino la transformación del conjunto de
+datos de manera que se estandaricen algunas de sus propiedades.
+
+Esto puede ser importante para el correcto funcionamiento de algunos algoritmos
+o métodos.
+
+```{r}
+head(faithful)
+```
+
+Los tiempos entre erupciones son de mucho mayor magnitud que el tiempo de la 
+erupción. En muchas aplicaciones (k-medias, regresión) deberíamos estandarizar.
+
+## Aplicaciones: preprocesamiento {.smaller}
+
+Con PCA podemos normalizar los datos (media cero, covarianza unitaria).
+
+Si escribimos los eigenvectores como 
+$$SU=UL$$
+
+donde $L$ es una matriz diagonal con los elementos $\lambda_i$ y $U$ es una 
+matriz ortogonal cuyas columnas son los vectores $u_i$. Entonces, para cada
+observación $y_i$ definimos su valor transformado 
+
+$$z_i=L^{-1/2}U^T(y_i-\bar{y})$$
+es claro que el conjunto $(z_1,...,z_N)$ tiene media cero.
+
+Veamos ahora la 
+covarianza:
+
+$$\frac{1}{N}\sum_{j=1}^Nz_jz_j^T=\frac{1}{N}\sum_{j=1}^NL^{-1/2}U^T(y_j-\bar{y})(y_j-\bar{y})^TUL^{-1/2}$$
+$$=L^{-1/2}U^TSUL^{-1/2}=L{-1/2}LL^{-1/2}=I$$
+
+## Ejercicio: whitening
+
+A la operación descrita se le conoce como _whitening_ o _sphereing_.
+
+Aplicala a los datos de faithful y compara los datos crudos contra
+los preprocesados usando gráficas.
+
+
+# Clustering
+
+Basado en http://fg-clases.squarespace.com/metodos-analiticos-/2015/4/16/clase-11-clustering
+
+## Ejemplo clásico
+
+```{r}
+ggplot(filter(iris, Species %in% c('setosa','versicolor')), 
+       aes(x=Sepal.Length, y=Petal.Width)) + geom_point()
+```
+
+## Ejemplo clásico
+
+```{r}
+ggplot(filter(iris, Species %in% c('setosa','versicolor')), 
+       aes(x=Sepal.Length, y=Petal.Width, colour=Species)) + geom_point()
+```
+
+## Ejemplo más real
+
+```{r}
+ggplot(airquality, aes(x=Ozone, y=Wind)) + geom_point()
+```
+
+donde no hay clusters bien definidos, o en dimensión más alta (100 variables, 10 casos) observamos cosas como la siguiente:
+```{r}
+mat.1 <- matrix(rnorm(10*100), ncol=100)
+dist(mat.1, method = 'euclidean')
+```
+
+## Enfoques basados en modelos
+
+- Introducir variables latentes que expliquen diferencias en las distribuciones
+de las variables observadas.
+- Hay metodos *combinatorios* que usan las variables originales de manera directa
+para tratar de segmentar las observaciones en grupos a través de los cuáles se
+minimiza alguna función objetivo (e.g. minimizar la dispersión dentro de los 
+grupos generados o maximizar la distancia entre los centroides de los grupos)
+

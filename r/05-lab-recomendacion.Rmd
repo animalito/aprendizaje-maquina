@@ -1,0 +1,195 @@
+---
+title: "Ejercicios de clase de recomendación"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: 
+  html_document:
+    toc: yes
+    toc_float: yes
+    css: estilos.css
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F, cache = T)
+options(digits=4)
+library(ggplot2)
+library(stringr)
+library(reshape2)
+library(dplyr)
+library(knitr)
+```
+
+## Ejercicio 1: Modelo simple con los datos de netflix
+
+Los datos del concurso de Netflix originalmente vienen en archivos de texto, un archivo por película.
+
+The movie rating files contain over 100 million ratings from 480 thousand
+randomly-chosen, anonymous Netflix customers over 17 thousand movie titles.  The
+data were collected between October, 1998 and December, 2005 and reflect the
+distribution of all ratings received during this period.  The ratings are on a
+scale from 1 to 5 (integral) stars. To protect customer privacy, each customer
+id has been replaced with a randomly-assigned id.  The date of each rating and
+the title and year of release for each movie id are also provided.
+
+The file "training_set.tar" is a tar of a directory containing 17770 files, one
+per movie.  The first line of each file contains the movie id followed by a
+colon.  Each subsequent line in the file corresponds to a rating from a customer
+and its date in the following format:
+
+CustomerID,Rating,Date
+
+- MovieIDs range from 1 to 17770 sequentially.
+- CustomerIDs range from 1 to 2649429, with gaps. There are 480189 users.
+- Ratings are on a five star (integral) scale from 1 to 5.
+- Dates have the format YYYY-MM-DD.
+
+1. [Descarga los datos](https://drive.google.com/open?id=0B58pFa0ldIHJR2RWTFJXVnp6VEE).
+2. Descomprímelos en el folder datos dentro del folder del módulo.
+3. Carga los datos de muestra (dat_muestra_nflix, que incluye solo 100 mil usuarios).
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+load('datos/dat_muestra_nflix.Rdata')
+dim(dat.muestra)
+head(dat.muestra)
+
+pelis.nombres <- read.csv('datos/movies_title_fix.csv', stringsAsFactors = FALSE, header=FALSE)
+names(pelis.nombres) <- c('peli_id','release','nombre')
+head(pelis.nombres)
+```
+
+
+4. Calcula medias para las películas. ¿Qué películas tienen las mejores calificaciones? 
+5. Grafica el número de evaluaciones contra la calificación promedio.
+
+```{r}
+# 4
+medias.peliculas <- dat.muestra %>% 
+  group_by(peli_id) %>% 
+  summarise(media_peli = mean(calif), num_calif_peli = length(calif))
+medias.p.2 <- left_join(medias.peliculas, pelis.nombres)
+arrange(medias.p.2, desc(media_peli)) %>% data.frame %>% head
+
+# 5
+ggplot(medias.p.2, aes(x=num_calif_peli, y=media_peli)) + geom_point()
+mean(dat.muestra$calif) # media global
+```
+
+6. ¿Puedes ver algún problema que podamos tener con nuestro modelo simple? 
+
+Se ve asi porque estamos viendo la variabilidad de la media en la medida en que aumenta la n.
+es decir, $\hat{x}= \frac{1}{n}\sum_{i=1}^{n}{x_i}$. No podemos cortar simplemente y decir que solo utilizaras para modelar las que tengan un minimo de observaciones *calificaciones*. Pero eso nos traera problemas particulares.
+
+No conviene poner una matriz de *usuarios x peliculas* con sus calificaciones. 
+Esta DEMASIADO rala esa matriz. Mejor lo guardamos como estamos haciendo ahorita, en forma larga y asi solo guardamos lo que necesitamos.
+
+7. Extrae el top de peliculas con al menos 500 observaciones.
+
+```{r}
+arrange(filter(medias.p.2, num_calif_peli > 500), desc(media_peli)) %>% 
+  data.frame %>% head(10) %>% select(peli_id, media_peli, nombre)
+```
+
+8. Selecciona una muestra de películas y usuarios. Separa las evaluaciones de esos usuarios y películas en una muestra de entrenamiento y otra de validación. 
+
+```{r}
+set.seed(28882)
+valida_usuarios <- sample(unique(dat.muestra$usuario_id), 20000 )
+valida_pelis <- sample(unique(dat.muestra$peli_id), 2000 )
+dat.2 <- dat.muestra %>%
+  mutate(valida_usu = usuario_id %in% valida_usuarios) %>%
+  mutate(valida_peli = peli_id %in% valida_pelis)
+
+dat.entrena <- filter(dat.2, !valida_usu | !valida_peli)
+dat.valida <- filter(dat.2, valida_usu & valida_peli)
+nrow(dat.entrena) + nrow(dat.valida)
+nrow(dat.2)
+```
+
+
+9. Construye predicciones y evalúa con la muestra de validación. Evalúa con la raíz error cuadrático medio.
+
+```{r}
+medias.pred <- dat.entrena %>%
+  group_by(peli_id) %>%
+  summarise(media.pred = mean(calif))
+```
+
+Le pego, por pelicula, al conjunto de validacion, la estimacion de las medias por pelicula.
+```{r}
+dat.valida.2 <- left_join(dat.valida, medias.pred)
+```
+
+Nota que puede ser que algunas películas seleccionadas en validación no tengan evaluaciones en entrenamiento:
+```{r}
+table(is.na(dat.valida.2$media.pred))
+```
+No sucede en este ejemplo, pero si sucediera podríamos usar el promedio general de las predicciones. Evaluamos ahora el error:
+
+```{r}
+sqrt(mean((dat.valida.2$calif - dat.valida.2$media.pred)^2))
+```
+
+Antes que nada hay que decir que lo mas dificil es la heterogeneidad en el USO de la escala por los usuarios. Hay gente exagerada o no. Las personas se expresan de manera distinta y eso es, independientemente de los gustos! Se esta midiendo a las personas con una regla grumosa que no depende del gusto. La calidad del instrumento es un problema.
+
+Eso ocasiona un problema muy dificil de analisis. 
+
+## Ejercicio 2: Modelo de referencia
+
+1. Genera el modelo base para los datos de netflix. Utiliza los datos de entrenamiento
+y validación que generaste en el ejercicio 1. 
+2. Si no tenemos predicción bajo este modelo para una combinación de usuario/película, usa el 
+promedio general.
+3. Evalúa el error del modelo usando como medida la raíz del error cuadrático medio.
+
+```{r}
+# 1
+medias.usuario.e <- dat.entrena %>% 
+  group_by(usuario_id) %>% 
+  summarise(media_usu = mean(calif), num_calif_usu = length(calif))
+
+medias.peliculas.e <- dat.entrena %>% 
+  group_by(peli_id) %>% 
+  summarise(media_peli = mean(calif), num_calif_peli = length(calif))
+
+media.gral.e <- mean(dat.entrena$calif)
+
+dat.valida.2 <- dat.valida %>%
+  left_join(medias.usuario.e) %>%
+  left_join(medias.peliculas.e) %>%
+  mutate(media.gral = media.gral.e) %>%
+  mutate(prediccion = media_usu - media.gral + media_peli)
+## 2
+dat.valida.2$prediccion[is.na(dat.valida.2$prediccion)] <- media.gral.e
+## 3
+sqrt(mean((dat.valida.2$prediccion - dat.valida.2$calif)^2))
+```
+
+## Ejercicio 3: Modelo de referencia regulariado
+
+1. Prueba con $\lambda=0.01,0.1,1,10,100,1000$. ¿Qué tanto puedes mejorar los 
+resultados sobre el conjunto de validación?
+2. Grafica el error de validación para cada lambda.
+
+```{r}
+# 1
+error.valida <- sapply(c(0.001,0.01,0.1,1,5,10,20,40,60,80,100,200), 
+                function(lambda){
+
+                  dat.valida.2 <- dat.valida %>%
+                    left_join(medias.usuario.e, by='usuario_id') %>%
+                    left_join(medias.peliculas.e, by='peli_id') %>%
+                    mutate(media.gral = media.gral.e) %>%
+                    mutate(prediccion = media.gral + (num_calif_usu/(num_calif_usu+lambda))*(media_usu - media.gral) +
+             (num_calif_peli/(num_calif_peli+lambda))*(media_peli-media.gral))
+                 dat.valida.2$prediccion[is.na(dat.valida.2$prediccion)] <- media.gral.e
+  
+                 sqrt(mean((dat.valida.2$prediccion - dat.valida.2$calif)^2))
+})
+# 2
+plot(error.valida)
+error.valida
+```
+
+Veremos más adelante cómo lidiar con este problema de una mejor manera. Por lo pronto se gano poquitito.

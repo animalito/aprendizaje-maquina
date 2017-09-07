@@ -1,0 +1,226 @@
+---
+title: "Ejemplo de cálculo manual de validación cruzada"
+css: estilos.css
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+output: 
+  html_document:
+    toc: 1
+    toc_float: yes
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F, cache = TRUE)
+library(tidyverse)
+library(ggplot2)
+```
+
+
+Código y ejercicios adaptados de clase de [Felipe Gonzalez](fg-clases.squarespace.com)
+
+# Simulación de datos
+
+```{r}
+sim_dat_1 <- function(n, p){
+  ## estas son variables latentes
+  u <- rnorm(n, 0, 1)
+  var_list <- lapply(1:(2*p), function(i){
+    10*u +   rnorm(n, 0, 10)
+  })
+
+  dat_x <- data.frame(Reduce('cbind', var_list))
+  ## y depende de la componente "latente" u.1, que en teoría deberíamos poder
+  ## extraer combinando las variables de entrada
+  names(dat_x) <- paste0('X',1:(2*p))
+  y <- 10 + 20*u + 2*dat_x[,1] - 1*dat_x[,2] + rnorm(n, 0, sd = 5)
+  dat_x$y <- y
+  dat_x
+}
+```
+
+### Ejercicio {#ejercicio}
+
+1. Prueba la función `sim_data_1` con $n = 50$ y $p=1,5,10$.
+2. ¿Qué hace la función?
+
+###
+
+```{r}
+
+```
+
+# Error de predicción: validación 
+
+¿Qué pasa cuando tenemos un único conjunto de prueba?
+
+```{r}
+set.seed(12234)
+dat_entrena <- sim_dat_1(50, 10)
+mod_1 <- lm(y ~ ., data = dat_entrena)
+dat_prueba <- sim_dat_1(10000, 10)
+sqrt(mean((predict(mod_1, newdata = dat_prueba) - dat_prueba$y)^2))
+sqrt(mean((fitted(mod_1) - dat_entrena$y)^2))
+```
+
+Vemos que la estimación del error de predicción (estimado con una muestra muy grande)
+es mucho más alto que el error de entrenamiento.
+
+# Error de predicción: validación cruzada
+
+¿Cómo funcionaría validación cruzada? Calculamos directamente:
+
+```{r}
+dat_entrena_1 <- dat_entrena[sample(1:nrow(dat_entrena), nrow(dat_entrena)), ]
+## definir bloque de validación cruzada
+dat_entrena_1$bloque <- rep(1:10, 5)
+mods_cv <- lapply(1:10, function(i){
+  mod_j <-  lm(y ~ ., data = filter(dat_entrena_1, bloque!=i) %>% select(-bloque))
+  mod_j
+})
+```
+
+Y podemos checar los coeficientes de los modelos obtenidos:
+
+```{r}
+Reduce('cbind', lapply(mods_cv, function(mod) coef(mod)))
+```
+
+Ahora podemos calcular el error de cada modelo con los datos que no utilizó:
+
+```{r}
+errores <- sapply(1:10, function(i){
+  dat_bloque <- filter(dat_entrena_1, bloque==i)
+  preds <- predict(mods_cv[[i]], newdata = dat_bloque)
+  sqrt(mean((preds-dat_bloque$y)^2))
+})
+errores
+```
+
+La estimación de validación cruzada del error es
+```{r}
+mean(errores)
+```
+
+con error estándar
+
+```{r}
+sd(errores)/sqrt(length(errores))
+```
+
+Y vemos que es considerablemente mejor como estimación del error de predicción. 
+
+
+# ¿Qué tan bien estima el error de predicción?
+
+Podemos hacer un ejercicio de simulación:
+
+```{r, cache=TRUE}
+errores_lista <- lapply(1:300, function(k){
+  dat_entrena <- sim_dat_1(100, 10)
+  mod_1 <- lm(y ~ ., data = dat_entrena)
+  error_entrena <- sqrt(mean((fitted(mod_1) - dat_entrena$y)^2))
+  dat_entrena_1 <- dat_entrena[sample(1:nrow(dat_entrena), nrow(dat_entrena)), ]
+## definir bloque de validación cruzada
+  dat_entrena_1$bloque <- rep(1:10, 10)
+  mods_cv <- lapply(1:10, function(i){
+    mod_j <-  lm(y ~ ., data = filter(dat_entrena_1, bloque!=i) %>% select(-bloque))
+    mod_j
+  })
+  errores <- sapply(1:10, function(i){
+    dat_bloque <- filter(dat_entrena_1, bloque==i)
+    preds <- predict(mods_cv[[i]], newdata = dat_bloque)
+    sqrt(mean((preds-dat_bloque$y)^2))
+  })
+  error_prueba <- sqrt(mean((predict(mod_1, newdata = dat_prueba) - dat_prueba$y)^2))
+  data.frame(error_cv = mean(errores), error_prueba = error_prueba, error_entrena = error_entrena)
+})
+
+error_df <- bind_rows(errores_lista)
+
+```
+
+
+Vemos que típicamente la estimación de validación cruzada es más confiable que la 
+de error de entrenamiento, que tiende a subestimar el error de predicción.
+
+
+```{r}
+error_df$nosim <- 1:nrow(error_df)
+error_1 <- error_df %>%
+  gather(error, valor, -nosim)
+ggplot(error_1, aes(x=error, y=valor)) + geom_boxplot()
+error_2 <- error_df %>%
+  gather(error, valor, -nosim, -error_prueba)
+ggplot(error_2, aes(x=error_prueba, y=valor, colour=error)) + 
+  geom_point() +
+  geom_abline() + 
+  xlim(c(5,9))
+```
+
+# Sesgo
+
+Sin embargo, el error de validación cruzada es aproximadamente insesgado para
+el *promedio* de prueba (promedio sobre las muestras de entrenamiento):
+
+```{r}
+error_1 %>%
+  group_by(error) %>%
+  summarise(media = mean(valor))
+```
+
+# Selección de modelos (*model selection*)
+
+¿Cómo funciona validación cruzada para seleccionar modelos? 
+
+```{r, cache=T}
+library(glmnet)
+set.seed(155)
+dat_prueba <- sim_dat_1(1000,20)
+x_prueba <- dat_prueba %>%
+    select(-y) %>%
+    as.matrix()
+selec_lista <- lapply(1:300, function(k){
+  dat_entrena <- sim_dat_1(50, 20)
+  lambdas <- exp(seq(-8,3,0.5))
+  x <- dat_entrena %>%
+    select(-y) %>%
+    as.matrix()
+  mods_1 <- cv.glmnet(x=x, y=dat_entrena$y,
+                      alpha=0.5, lambda=lambdas)
+  errores_prueba <- apply(predict(mods_1, newx = x_prueba, s=mods_1$lambda) - dat_prueba$y, 2, function(x){ mean(x^2)})
+  data.frame(lambda_num = 1:length(mods_1$lambda), lambda = mods_1$lambda, error_vc=mods_1$cvm, rep=k, error_prueba=errores_prueba)
+})
+
+
+
+vc_1 <- bind_rows(selec_lista)
+error_p <- vc_1 %>%
+  group_by(lambda_num) %>%
+  summarise(lambda=mean(lambda), media_prueba = (mean(error_prueba)))
+error_p
+ggplot(vc_1, aes(x=lambda, y =(error_vc))) + geom_line(aes(group=rep), alpha=0.5) +
+  scale_x_log10(breaks=c(0.01,0.1,1, 10)) + 
+  geom_line(data=error_p, aes(y=media_prueba), colour='red', size=1.2) +
+  scale_y_sqrt()
+```
+
+### Nota {#importante}
+
+Validación cruzada tiende a seleccionar modelos cercanos
+al óptimo para minimizar el error esperado de predicción (línea roja), aún
+cuando las estimaciones del error tienen variación grande.
+
+###
+
+Resumen
+------
+
+1. El error de validación cruzada típicamente es mejor estimador del error de predicción
+(condicional, es decir, para una muestra de entrenamiento dada) de un modelo que el error de entrenamiento.
+2. Es más apropiado, sin embargo, pensar que el error de validación cruzada estima
+el error de predicción (no condicionado o promedio).
+3. Es difícil estimar de manera precisa el error de predicción de manera interna (sin muestra de validación/prueba). 
+4. Validación cruzada es útil también para seleccionar modelos.
+
+
+
+

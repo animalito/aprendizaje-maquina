@@ -1,0 +1,228 @@
+---
+title: "Bagging"
+author: "Andrea Fernandez"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+css: estilos.css
+output: 
+  html_document:
+    toc: 2
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F)
+library(tidyverse)
+library(ISLR)
+library(ggplot2)
+library(dplyr)
+library(rpart)
+library(rpart.plot)
+library(ElemStatLearn)
+heart <- read_csv("http://www-bcf.usc.edu/~gareth/ISL/Heart.csv")
+```
+
+Bagging, random forests y boosting nos permiten construir modelos de predicción más poderosos.
+
+# Contexto e idea 
+
+Bootstrap (que vimos hace unas clases) es una idea muy poderosa que se utiliza en diferentes situaciones en los que es muy dificil o imposible computar la desviación estándar de una cantidad de interés. (Recuerda que es importante construir SE porque nos habla del *error* en la estimación.)
+
+Bootstrap sirve para otros contextos, específicamente nos puede ayudar a mejorar un método de aprendizaje estadístico, por ejemplo los árboles de decisión.
+
+Los árboles (como CART) sufren de **alta varianza**. Esto es que, si entreno con muestras distintas los resultados pueden ser muy diferentes. Un procedimiento con *baja varianza* no sufre de este problema.
+
+### Bootstrap aggregation o bagging {#importante}
+
+Son procedimientos generales que permiten reducir la varianza de un método de aprendizaje estadístico.
+
+Se utilizan mucho en el contexto de árboles de decisión pero sirven también para otros métodos.
+
+La clave es utilizar un método de aprendizaje en forma repetida para varias muestras bootstrap de las observaciones y promediar los modelos obtenidos.
+
+# Bagging en palabras
+
+La idea básica es que al promediar una serie de observaciones, se reduce la varianza. Por ende, una manera natural para reducir la varianza y aumentar la precisión de un método es:
+
+i. Tomar varios conjuntos de entrenamiento de la población de referencia
+ii. Construir modelos predictivos separados para cada subconjunto
+iii. Promediar el resultado de las predicciones.
+
+Como normalmente no podemos tener acceso a múltiples conjuntos de entrenamiento de la población de referencia, aplicamos bootstrap al conjunto de datos que tenemos. 
+
+Es decir, tomamos muestras *repetidas* de un único conjunto de entrenamiento para generar $B$ diferentes conjuntos bootstrap de entrenamiento. 
+
+# Matemáticamente
+
+Calculamos $\hat{f}^1(x), \hat{f}^2(x), ..., \hat{f}^B(x)$ usando $B$ conjuntos de entrenamiento extraidos a través de $B$ muestras bootstrap del conjunto de entrenamiento original. Después, entrenamos en cada muestra y promediamos obteniendo un modelo por bagging de la forma:
+
+\[
+\hat{f}_{bag}(x) = \frac{1}{B}\sum_{b=1}^B \hat{f}^{*b}(x)
+\]
+
+donde $\hat{f}^{*b}(x)$ es el resultado de entrenar la b-ésima muestra bootstrap con el método de aprendizaje elegido.
+
+**Sobre el tamaño de $B$**. El número $B$ no es un parámetro crítico. Si $B$ es muy grande, no causará overfitting. Normalmente se toma una $B$ suficientemente grande para que el error se estabilice. 
+
+# Bootstrap con variables categóricas 
+
+Para extender *bagging* a problemas de clasificación se pueden utilizar diferentes maneras para "promediar".
+
+Una forma muy utilizada es que para cada observación en el conjunto de prueba se guarda la predicción de los $B$ árboles y se toma una decisión de su categoría por *mayoría simple*. De esta forma, la predicción por bagging es la que ocurrió en la mayor cantidad de casos de entre las $B$ predicciones dadas para cada observación.
+
+# Estimación del error "out-of-bag"
+
+Se puede calcular el error de prueba sin utilizar validación cruzada o el método de validación.
+
+Recordemos que las muestras bootstrap de un conjunto de datos con $N$ observaciones se construyen tomando una muestra **con reemplazo** de tamaño $N$.
+
+Debido a esto, para cada una de las muestras bootstrap, habrá observaciones que no fueron utilizadas. De hecho, en promedio se quedan fuera del conjunto bootstrap de entrenamiento alrededor de un tercio de las observaciones. 
+Nos referimos a las observaciones que no se utilizan como las observaciones fuera de la bolsa (*out of bag*  = OOB).
+
+Podemos predecir la respuesta de la i-ésima observación utilizando cada uno de los modelos en los que esa observación fue OOB.
+
+De esta manera, tenemos alrededor de $\frac{B}{3}$ predicciones para la observación i-ésima.
+
+Para obtener una única predicción, podemos promediarlas (si estamos en el caso de regresión) o utilizar un método de mayoría (cuando es clasificación).
+
+Obtenemos una predicción OOB para cada una de las $N$ observaciones en el conjunto de datos en donde podemos calcular un error como MSE (regresión) o alguna medida de precisión (para clasificación).
+
+Esta estimación del error OOB es válida pues ninguna de las predicciones utilizadas fue considerada en ese entrenamiento del  modelo en particular.
+
+Se puede demostrar que el error obtenido por OOB es virtualmente equivalente al error LOOCV (leave one out cross validation). OOB es muy útil para calcular el error de prueba en *bagging* porque validación cruzada es computacionalmente **muy** costoso.
+
+
+# Ejercicio
+
+Esta sección se toma de un ejercicio de [aquí](https://felipegonzalez.github.io/aprendizaje_estadistico_2015/archivo/).
+
+Usamos los datos de **spam**. Revisa la descripción de la base con:
+
+```{r, eval = F}
+?spam
+```
+
+Generamos un conjunto de entrenamiento y uno de prueba. Utilizaremos $B = 400$.
+
+```{r}
+set.seed(22162)
+ind_train <- sample(1:nrow(spam), 500)
+train <- spam[ind_train,]
+test <- spam[-ind_train,]
+B <- 400
+```
+
+Primero construimos `r B` muestras bootstrap de los datos de entrenamiento,
+y ajustamos un árbol a cada una de esas muestras:
+
+```{r}
+control <- rpart.control(maxdepth=10, xval=2, cp=0)
+arboles <- lapply(1:B, function(i){
+  train_boot <- train[sample(1:nrow(train), nrow(train), replace = T), ]
+  rpart(spam ~., data=train_boot, control=control)
+})
+
+```
+
+Podemos ver parte de los primeros tres árboles:
+
+```{r}
+prp(arboles[[1]], type=4, extra=4)
+prp(arboles[[2]], type=4, extra=4)
+prp(arboles[[3]], type=4, extra=4)
+
+```
+
+Y hacemos predicciones:
+
+```{r}
+preds <- lapply(1:length(arboles), function(i){ 
+  data_frame(rep = i, indice = 1:nrow(test),
+             obs = test$spam, preds=predict(arboles[[i]], newdata = test, type='class'))
+  }) %>%
+  bind_rows()
+head(preds)
+```
+
+### Observaciones importantes {#curiosidad}
+
+1. *Validación (usar un conjunto de prueba y uno de entrenamiento) no escala*. Estamos utilizando un conjunto de validación y por lo tanto para cada 
+uno de los entrenamientos, generamos `r nrow(test)` predicciones (el número
+de observaciones en prueba). En las 400 replicaciones (B), tenemos entonces
+$4101 * 400$ (es decir, `r 400 * nrow(test)` datos en el data frame *preds*. Esto claramente no escala muy bien en datos grandes: por eso OOB es importante.
+2. *Inestabilidad*. Las variables utilizadas y la estructura de los árboles es
+diferente para cada replicación bootstrap. Esto es por el proceso inestable de
+construcción de los árboles. Cuando observamos esta variabilidad, bagging
+puede ayudar considerablemente en la predicción.
+
+###
+
+Finalmente evaluamos con la muestra de prueba. Nótese que
+el predictor de bagging de árboles se hace por mayoría de votos
+de los árboles integrantes, y es un modelo más complejo que un sólo árbol (tenemos
+que guardar la estructura de los `r B` árboles construidos):
+
+```{r}
+preds_agg <- preds %>% 
+  group_by(indice) %>%
+  summarise(
+    pred_bag = names(sort(table(preds))[2])
+    , obs = obs[1]
+    )
+```
+
+Con una única predicción (por mayoría) del conjunto de prueba, podemos ya
+observar los falsos positivos, falsos negativos, etc. 
+
+```{r}
+table(preds_agg$pred_bag, test$spam)
+```
+
+La proporción de casos bien clasificados en prueba:
+
+```{r}
+p_agg <- sum(diag(table(preds_agg$pred_bag, test$spam)))/nrow(test)
+p_agg
+```
+
+con error estándar
+
+```{r}
+sqrt(p_agg*(1-p_agg)/nrow(test))
+```
+
+
+Mientras que la proporción de bien clasificados (p_arbol) y los errores de los árboles individuales son:
+
+```{r}
+arbol <- rpart(spam ~., data=train, control=control)
+p_arbol <- sum(diag(table(predict(arbol, newdata = test, type='class'), test$spam)))/nrow(test)
+p_arbol
+sqrt(p_arbol*(1-p_arbol)/nrow(test))
+```
+
+Nota: experimenta con tamaños de muestra distintas y profundidades de árboles distintas. La mejora puede ser muy chica o más considerable. La profundidad
+la fijamos al inicio, en el objeto control:
+
+```{r}
+control$maxdepth
+```
+
+# De bagging a bosques aleatorios
+
+En boosting, introducimos variabilidad al entrenar con muestras bootstrap del 
+conjunto de entrenamiento.
+
+Podemos también escoger introducir variabilidad en el proceso de crecimiento de los árboles. Esa es la idea detrás de bosques aleatorios en donde *en cada nodo* tomamos una muestra de $m$ variables para buscar el mejor corte. Cada vez que llegamos a un nodo nuevo seleccionamos $m$ nuevas variables al azar. Esto, como veremos, tiene el efecto de decorrelacionar los árboles y reducir la varianza del predictor final.
+
+Por ejemplo, aquí tomamos $m=4$ variables de las
+57 posibles:
+
+```{r}
+set.seed(901)
+library(randomForest)
+rf <- randomForest(spam ~.,  data = train, mtry = 4, ntree = B)
+pred_rf <- predict(rf, test)
+mean(pred_rf == test$spam)
+```
+
+Veremos ahora con detalle bosques aleatorios.

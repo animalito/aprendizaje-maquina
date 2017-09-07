@@ -1,0 +1,505 @@
+---
+title: "Bootstrap"
+css: estilos.css
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+output: 
+  html_document:
+    toc: 1
+    toc_float: yes
+---
+
+```{r, include=F}
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F)
+library(plyr)
+library(tidyverse)
+library(ggplot2)
+```
+
+
+Código y ejercicios adaptados de clase de [Teresa Ortiz](teresa-ortiz.squarespace.com)
+
+### Inferencia y probabilidad {#importante}
+
+la inferencia estadística se ocupa de aprender de la experiencia: 
+observamos una muestra aleatoria x y queremos inferir propiedades de la 
+población que produjo la muestra. 
+
+Probabilidad va en la dirección contraria:
+de la composicion de una población deducimos las propiedades de una muestra aleatoria
+
+###
+
+# Muestras aleatorias
+
+Esta sección esta basada en el libro [An Introduction to the Bootstrap de
+Effron y Tibshirani](http://www.amazon.com/Introduction-Bootstrap-Monographs-Statistics-Probability/dp/0412042312)
+
+Supongamos que tenemos una población finita o _universo_ $U$, conformado
+por unidades individuales $U_1,U_2,...,U_N$ cada una tiene la misma probabilidad
+de ser seleccionada en una **extracción** aleatoria. Las unidades individuales
+$U_i$ tienen propiedades que nos gustaría aprender (opinión política,...). 
+Debido a que es muy difícil y caro examinar cada unidad en $U$ seleccionamos una 
+muestra aleatoria.
+
+<div style="background-color:mistyrose;padding:5px;">
+<p>
+Una **muestra aleatoria** de tamaño $n$ se define como una colección de $n$
+unidades $u_1,...,u_n$ seleccionadas aleatoriamente de un universo $U$.  
+</p>
+</div>
+
+En principio el proceso de muestreo es como sigue:
+
+1. Seleccionamos $n$ enteros de manera independiente $j_1,...,j_n$ (con 
+probabilidad $1/N$), cada uno de ellos asociado a un número entre $1$ y $N$.
+
+2. Los enteros determinan las unidades que seleccionamos: 
+$u_1=U_{j_1},u_2=U_{j_2},...,u_n=U_{j_n}$.
+
+En la práctica el proceso de selección suele ser más complicado y la población
+definición de  la población $U$ suele ser deficiente; sin embargo el marco
+conceptual sigue siendo útil para entender la inferencia estadística.
+
+Observación: Nuestra definición de muestra aleatoria permite que una unidad 
+particular $U_i$ aparezca más de una vez, podríamos evitar esto si realizamos
+un _muestreo sin remplazo_; sin embargo, es un poco más sencillo permitir 
+repeticiones y si el tamaño de la muestra $n$ es mucho más chico que la 
+población $N$, la probabilidad de muestrear la misma unidad más de una vez
+es chica.
+
+Una vez que selecciona una muestra aleatoria $u_1,...,u_n$ obtenemos una o más
+medidas de interés para cada unidad. Los *datos observados* son la colección
+de medidas $x_1,...,x_n$, que también denotaremos $\textbf{x} = (x_1,...,x_n)$.
+
+Podemos imaginar también, obtener las medias de interés de cada unidad en 
+la población $U_1,U_2,...,U_N$, obteniendo así los valores $X_1,...,X_N$, esto
+sería un **censo**, y denotamos al conjunto de mediciones de la población por
+$\mathcal{X}$. El objetivo de la inferencia estadística es expresar lo que hemos aprendido 
+de la población $\mathcal{X}$ a partir de los datos observados $\textbf{x}$. En 
+particular, vamos a usar el **bootstrap** para determinar que tan preciso es un
+estadístico (e.g. media o mediana) calculado de la muestra $x_1,...,x_n$ estima 
+la cantidad correspondiente en la población.
+
+### Escuelas primarias
+
+Veamos un ejemplo artificial donde tenemos una muestra de 500 escuelas primarias
+del DF tomada de un universo de 3,311 escuelas.
+
+```{r, echo = FALSE, message=FALSE}
+load("datos/base_completa.Rdata")
+prim <- primaria %>%
+  tbl_df %>%
+  filter(entidad == "DISTRITO FEDERAL", !is.na(esp.3), !is.na(esp.6)) %>%
+  select(clave, turno, tipo = tipo.esc, mun = clave.mun, esp3 = esp.3, 
+    esp6 = esp.6) %>%
+  mutate(tipo = as.character(tipo))
+      
+```
+
+```{r}
+set.seed(16021)
+n <- 500
+prim_muestra <- sample_n(prim, n, replace = TRUE)
+head(prim_muestra)
+```
+
+para cada escuela en la muestra tenemos la medida $x_i$, conformada por el 
+promedio de las calificaciones en español de los alumnos de tercero y sexto 
+de primaria (prueba ENLACE 2010):
+$$x_i=(esp3_i, esp6_i)$$
+
+Este ejemplo es artificial pues contamos con un censo de las escuelas, sin 
+embargo es común contar únicamente con la muestra, esta tiene una media
+de `r round(mean(prim_muestra$esp3), 1)`, con un error estándar estimado de 
+`r round(sqrt(sum((prim_muestra$esp3 - mean(prim_muestra$esp3)) ^ 2 / n-1)) / sqrt(n), 2)`. Debido a que nuestro ejemplo es artificial podemos comparar con la población, 
+la media de las `r nrow(prim)` escuela es `r round(mean(prim$esp3), 1)`.
+
+
+# El principio del _plug-in_
+
+En ocasiones, los problemas de inferencia estadística involucran la estimación
+de algún aspecto de una distribución de de probabilidad $P$ en base a una 
+muestra aleatoria obtenida de $P$. La función de distribución empírica $P_n$ 
+es una estimación de la distribución completa $P$, por lo que una manera 
+inmediata de estimar aspectos de $P$ (e.g media o mediana) es calcular el 
+aspecto correspondiente de $P_n$.
+
+## Distribución empírica
+
+La distribución empírica es la lista de valores que toma una muestra 
+$x = (x_1,...,x_n)$ junto con la proporción de las veces que ocurre cada valor.
+
+### Dado {#ejemplo}
+Si tenemos 120 lanzamientos de un dado, obtenemos la siguiente distribución empírica:
+
+```{r}
+dado <- sample(x = 1:6, 120, replace = T)
+table(dado)
+
+table(dado) / 120
+```
+
+### Calificaciones 
+
+Podemos comparar el histograma de la distribución completa con el histograma
+de la distribución empírica para el ejemplo de las calificaciones de la 
+prueba ENLACE.
+
+```{r, fig.width=5, fig.height=4}
+claves_muestra <- prim_muestra$clave
+prim_tidy <- prim %>% 
+  gather(grado, calif, esp3, esp6) %>%
+  mutate(muestra = ifelse(clave %in% claves_muestra, "muestra", "población"))
+
+prim_plot <- prim_muestra  %>% 
+  gather(grado, calif, esp3, esp6) %>%
+  mutate(muestra = "población") %>%
+  rbind(prim_tidy)
+
+ggplot(prim_plot, aes(x = calif)) +
+  geom_histogram(aes(y = ..density..), binwidth = 20) +
+  facet_grid(grado ~ muestra)
+```
+
+Cuando la variable de interés toma pocos valores es fácil ver la distribución 
+empírica: supongamos que la medición de las unidades que nos interesa es la 
+variable tipo de escuela, entonces la distribución empírica en la muestra es
+
+```{r}
+table(prim_muestra$tipo) / n
+```
+
+Vale la pena notar que pasar de la muestra desagregada a la distribución 
+empírica (lista de valores y la proporción que ocurre cada una en la muestra) 
+no conlleva ninguna pérdida de información: el vector de frecuencias observadas 
+es un **estadístico suficiente** para la verdadera distribución. Esto quiere 
+decir que toda la información de $P$ contenida en el vector de 
+observaciones $\textbf{x}$ está también contenida en $P_n$.
+
+**Nota**: el teorema de suficiencia asume que las observaciones $\textbf{x}$ son
+una muestra aleatoria de la distribución $P$, este no es siempre el caso 
+(e.g. si tenemos una serie de tiempo).
+
+Cuando aplicamos teoría estadística a problemas reales, es común que las 
+respuestas estén dadas en términos de distribuciones de probabilidad. 
+Por ejemplo, podemos preguntarnos que tan correlacionados están los resultados de las pruebas de 
+español correspondientes a 3^o y 6^o. Si conocemos la distribución de 
+probabilidad $P$ contestar esta pregunta es simplemente cuestión de aritmética, 
+el coeficiente de correlación poblacional esta dado por:
+
+$$corr(y,z) = \frac{\sum_{j=1}^{N}(Y_j - \mu_y)(Z_j-\mu_z)}
+{[\sum_{j=1}^{N}(Y_j - \mu_y)^2\sum_{j=1}^{N}(Z_j - \mu_z)^2]^{1/2}}$$
+
+en nuestro ejemplo $(Y_j,Z_j)$ son el j-ésimo punto en la población de 
+escuelas primarias $\mathcal{X}$, $\mu_y=\sum Y_j/3311$ y $\mu_z=\sum Z_j/3311$.
+
+```{r, fig.width=4, fig.height=4}
+ggplot(prim, aes(x = esp3, y = esp6)) +
+  geom_point(alpha = 0.5)
+cor(prim$esp3, prim$esp6)
+```
+
+Si no tenemos un censo debemos inferir. Por ejemplo, podríamos estimar la correlación 
+$corr(y,z)$ a través del coeficiente de correlación muestral:
+$$\hat{corr}(y,z) = \frac{\sum_{j=1}^{N}(y_j - \mu_y)(z_j-\mu_z)}
+{[\sum_{j=1}^{N}(y_j - \mu_y)^2\sum_{j=1}^{N}(z_j - \mu_z)^2]^{1/2}}$$
+
+```{r}
+cor(prim_muestra$esp3, prim_muestra$esp6)
+```
+
+## Otros ejemplos de estimaciones _plug-in_:
+
+* Supongamos que nos interesa estimar la mediana de las calificaciones
+de español para 3^o de primaria:
+
+```{r}
+median(prim_muestra$esp3)
+```
+
+* Supongamos que nos interesa estimar la probabilidad de que la calificación de 
+español de una escuela sea mayor a 700:
+
+$$\theta=\frac{1}{N}\sum_{j=1}^N I_{\{Y_i>700\}}$$
+
+donde $I_{\{\cdot\}}$ es la función indicadora.
+
+Hacemos la estimación _plug-in_ $\hat{\theta}$:
+
+```{r}
+sum(prim_muestra$esp3 > 700) / n
+```
+
+En este caso no tenemos un censo, solo contamos con la muestra. Una pregunta
+de inferencia que surge de manera natural es si el dado es justo, esto es, 
+si la distribución que generó esta muestra tiene una distribución 
+$P = (1/6, 1/6, 1/6,1/6, 1/6, 1/6)$.
+Para resolver esta pregunta, debemos hacer inferencia de la distribución 
+empírica.
+
+# Parámetros y estadísticos
+
+
+<div style="background-color:mistyrose;padding:5px;">
+<p>
+Un **parámetro** es una función de la distribución de probabilidad 
+$\theta=t(P)$, mientras que un **estadístico** es una función de la 
+muestra $\textbf{x}$. 
+</p>
+</div>
+
+Por ejemplo, la $corr(y,z)$ es un parámetro de $P$ y $\hat{corr}(x,y)$ es un 
+estadístico basado en $\textbf{x}$.
+
+Entonces:
+
+<div style="background-color:mistyrose;padding:5px;">
+<p>
+El **principio del _plug-in_** es un método para estimar parámetros a 
+partir de muestras; la estimación _plug-in_ de un parámetro $\theta=t(P)$ se 
+define como:
+$$\hat{\theta}=t(P_n).$$
+</p>
+</div>
+
+# ¿Qué tan bien funciona el principio del plug-in?
+
+Usualmente es muy bueno cuando la única información disponible de $P$ es la 
+muestra $\textbf{x}$, bajo esta circunstancia $\hat{\theta}=t(P_n)$ no puede
+ser superado como estimador de $\theta=t(P)$, al menos no en el sentido 
+asintótico de teoría estadística $(n\to\infty)$.
+
+El principio del _plug-in_ provee de una estimación más no habla de precisión, 
+por ello usaremos el bootstrap para estudiar el sesgo y el error estándar del 
+estimador _plug-in_ $\hat{\theta}=t(P_n)$, la maravilla del bootstrap es que 
+produce errores estándar y sesgos de manera automática, sin importar que tan
+complicada es la función $t(P)$.
+
+# Errores estándar y sus estimaciones
+
+Los estadísticos como $\hat{\theta}=t(P_n)$ suelen ser el primer paso en el 
+análisis de datos, el siguiente paso es investigar la precisión de las 
+estimaciones
+
+El **bootstrap** es un método para calcular precisión de estimaciones
+que se vale del principio del _plug-in_ para estimar el error estándar de una
+estadística.
+
+### Ejemplo: el error estándar de una media {#ejemplo}
+
+Supongamos que $x$ es una variable aleatoria que toma valores en los reales con 
+distribución de probabilidad P. Denotamos por $\mu_P$ y $\sigma_P^2$ la 
+media y varianza de P,
+
+$$\mu_P = E_P(x),$$ 
+$$\sigma_P^2=var_P(x)=E_P[(x-\mu_P)^2]$$
+
+en la notación enfatizamos la dependencia de la media y varianza en la 
+distribución $P$. 
+
+Ahora, sea $(x_1,...,x_n)$ una muestra aleatoria de $P$, de tamaño $n$, 
+la media de la muestra $\bar{x}=\sum_{i=1}^nx_i/n$ tiene esperanza $\mu_P$ y 
+varianza $\sigma_P^2/n$.
+
+En palabras: la esperanza de $\bar{x}$ es la misma que la esperanza de $x$, pero
+la varianza de $\bar{x}$ es $1/n$ veces la varianza de $x$, así que entre
+mayor es la $n$ tenemos una mejor estimación de $\mu_P$.
+
+El error estándar denota la desviación estándar de una estadística. En el 
+caso de la media $\bar{x}$, el error estándar, que denotamos $se_P(\bar{x})$, 
+es la raíz de la varianza de $\bar{x}$,
+$$se_P(\bar{x}) = [var_P(\bar{x})]^{1/2}= \sigma_P/ \sqrt{n}.$$
+
+En este punto podemos usar el principio del _plug-in_, simplemente sustituimos
+$P_n$ por $P$ y obtenemos, primero, una estimación de $\sigma_P$:
+$$\hat{\sigma}=\hat{\sigma}_{P_n} = \bigg\{\frac{1}{n}\sum_{i=1}^n(x_i-\bar{x})^2\bigg\}^{1/2}$$
+
+de donde se sigue la estimación del error estándar:
+$$\hat{se}(x)=\sigma_{P_n}/\sqrt{n}=\bigg\{\frac{1}{n^2}\sum_{i=1}^n(x_i-\bar{x})^2\bigg\}^{1/2}$$
+
+Notemos que usamos el principio del _plug-in_ en dos ocasiones, primero para 
+estimar la esperanza $\mu_P$ mediante $\mu_{P_n}$ y luego para estimar el 
+error estándar $se_P(\bar{x})$ mediante $se_{P_n}(\bar{x})$. En el caso de la
+media $\hat{\theta}=\bar{x}$ la aplicación del principio del _plug-in_
+para el cálculo de errores estándar es inmediata; sin embargo, hay estadísticas
+para las cuáles no es fácil aplicar este método y es ahí cuando aplicaremos
+el bootstrap.
+
+# Error estándar
+
+El error estándar es la manera más común para describir la 
+precisión de una estadística. En términos generales, esperamos que $\bar{x}$ 
+este a una distancia de $\mu_P$ menor a un error estándar el 68% del tiempo, 
+y a menos de 2 errores estándar el 95% del tiempo. Estos porcentajes están 
+basados el **teorema central del límite** que nos dice que bajo ciertas condiciones 
+(bastante generales) de $P$ la distribución de $\bar{x}$ se aproximará a una 
+distribución normal:
+$$\bar{x} \overset{\cdot}{\sim} N(\mu_P,\sigma_P^2/n)$$
+
+
+# El estimador bootstrap del error estándar
+
+Supongamos que tenemos una muestra aleatoria $\textbf{x}=(x_1,x_2,...,x_n)$ 
+proveniente de una distribución de probabilidad desconocida $P_n$ y deseamos 
+estimar un parámetro $\theta = t(P)$ con base en la muestra. Para esto, 
+calculamos una estimación $\hat{\theta}=s(\textbf{x})$ (la estimación puede
+ser la estimación _plug-in_ $t(P_n)$ pero también puede ser otra). Entonces podemos
+usar bootstrap para calcular el error estándar de la estimación.
+
+<div style="background-color:mistyrose;padding:5px;">
+<p>
+Definimos una **muestra bootstrap** como una muestra aleatoria de tamaño $n$ que
+se obtiene de la distribución empírica $P_n$ y la denotamos 
+$$\textbf{x}^* = (x_1^*,...,x_n^*).$$
+</p>
+</div>
+
+La notación de estrella indica que $\textbf{x}^*$ no son los datos $\textbf{x}$
+sino una versión de **remuestreo** de $\textbf{x}$.
+
+Otra manera de frasearlo: Los datos bootsrtap $x_1^*,...,x_n^*$ son una muestra
+aleatoria de tamaño $n$ seleccionada con reemplazo de la población de $n$
+objetos $(x_1,...,x_n)$. 
+
+Ahora, a cada muestra bootstrap $\textbf{x}^*$ le corresponde una replicación
+$\hat{\theta}^*=s(\textbf{x}^*).$
+
+La estimación bootstrap de $se_{P}(\hat{\theta}^*)$, esto es, el error estándar
+de un estadístico $\hat{\theta}$ es una estimación _plug-in_ en donde la
+distribución empírica $P_n$ toma el lugar de la distribución desconocida $P$:
+el estimador bootstrap de $se_P(\hat{\theta})$ se define como:
+$$se_{P_n}(\hat{\theta}^*)$$
+en otras palabras, la estimación bootstrap de $se_P(\hat{\theta})$ es el error
+estándar de $\hat{\theta}$ para conjuntos de datos de tamaño $n$ seleccionados
+de manera aleatoria de $P_n$.
+
+La fórmula $se_{P_n}(\hat{\theta}^*)$ no existe para casi ninguna estimación que 
+diferente de la media, por lo que recurrimos a la técnica computacional 
+bootstrap: el algoritmo funciona seleccionando distintas muestras bootstrap, 
+evaluando la replicación bootstrap correspondiente y estimando el error estándar
+de $\hat{\theta}$ mediante la desviación estándar empírica de las replicaciones.
+El resultado es la estimación bootstrap del error estándar, que denotamos
+$\hat{se}_B$, donde $B$ es el número de muestras bootstrap usadas.
+
+<div style="background-color:mistyrose;padding:5px;">
+<p>
+#### Algoritmo bootstrap para estimar errores estándar
+1. Selecciona $B$ muestras bootsrtap independientes: 
+$$\textbf{x}^{*1},..., \textbf{x}^{*B}$$.  
+2. Evalúa la replicación bootstrap correspondiente a cada muestra bootstrap:
+$$\hat{\theta}^{*b}=s(\textbf{x}^{*b})$$
+para $b=1,2,...,B.$
+3. Estima el error estándar $se_P(\hat{\theta})$ usando la desviación estándar
+muestral de las $B$ replicaciones:
+$$\hat{se}_B = \bigg\{\frac{\sum_{b=1}^B[\hat{\theta}^*(b)-\hat{\theta}^*(\cdot)]^2 }{B-1}\bigg\}^{1/2}$$
+</p>
+</div>
+
+Conforme el número de replicaciones $B$ aumenta 
+$$\hat{se}_B\approx se_{P_n}(\hat{\theta})$$
+este hecho equivale a decir que la desviación estándar empírica se acerca a la 
+desviación estándar poblacional conforme crece el número de muestras. La 
+_población_ en este caso es la población de valores $\hat{\theta}^*=s(x^*)$
+
+
+Escribimos una función para calcular el error estándar de una media usando 
+replicaciones bootstrap:
+
+```{r, cache=TRUE}
+mediaBoot <- function(x){ 
+  # x: variable de interés
+  # n: número de replicaciones bootstrap
+  n <- length(x)
+  muestra_boot <- sample(x, size = n, replace = TRUE)
+  mean(muestra_boot) # replicacion bootstrap de theta_gorro
+}
+thetas_boot <- rdply(1000, mediaBoot(prim_muestra$esp3))
+sd(thetas_boot$V1)
+```
+
+y se compara con 
+
+```{r}
+se <- function(x) sqrt(sum((x - mean(x)) ^ 2)) / length(x)
+se(prim_muestra$esp3)
+```
+
+### Ejercicio {#ejercicio}
+
+Considera el coeficiente de correlación muestral
+entre la calificación de $y=$español 3 y la de $z=$español 6: 
+$\hat{corr}(y,z)=0.9$. ¿Qué tan preciso es esta estimación? 
+
+###
+
+```{r}
+medianBoot <- function(x,y){
+  df <- data.frame(x=x, y=y)
+  # x: variable de interés
+  # n: número de replicaciones bootstrap
+  n <- length(x)
+  muestra_boot <- sample_n(df, size = n, replace = TRUE)
+  cor(muestra_boot$x, muestra_boot$y) # replicacion bootstrap de theta_gorro
+}
+thetas_boot <- rdply(5000, medianBoot(prim_muestra$esp3, prim_muestra$esp6))
+sd(thetas_boot$V1)
+```
+<p class="bottom">
+</p>
+
+## ¿Cuántas replicaciones bootstrap (B)?
+
+La estimación bootstrap ideal es un resultado asintótico $B=\infty$, en esta 
+caso $\hat{se}_B$ iguala la estimación _plug-in_ $se_{P_n}$. En la práctica para 
+elegir el tamaño de $B$ debemos considerar que buscamos las mismas propiedades 
+para la estimación de un error esrándar que para cualquier estimación: poco 
+sesgo y desviación estándar chica. El sesgo de la estimación bootstrap del 
+error estándar suele ser bajo y el error estándar está
+
+<!-- Una respuesta aproximada es en términos del coeficiente de variación de 
+$\hat{se}_B$, esto es el cociente de la desviación estándar de $\hat{se}_B$ y su 
+valor esperado, la variabilidad adicional de parar en $B$ replicaciones en lugar 
+de seguir hasta infiniti se refleja en un incremento en el coeficiente de 
+variación
+-->
+
+Reglas de dedo (Effron y Tibshirani):
+
+1. Incluso un número chico de replicaciones bootstrap, digamos $B=25$ es 
+informativo, y $B=50$ con frecuencia es suficiente para dar una buena 
+estimación de $se_P(\hat{\theta})$.
+
+2. En pocos casos es necesario realizar más de $B=200$ replicaciones cuando 
+se busca estimar **error estándar**.
+
+### Ejemplo {#ejemplo}
+
+```{r, cache=TRUE}
+seMediaBoot <- function(x, B){
+  thetas_boot <- rdply(B, mediaBoot(x))
+  sd(thetas_boot$V1)
+}
+
+B_muestras <- c(5, 25, 50, 100, 200, 400, 800, 1600, 3200)
+sapply(B_muestras, function(i) seMediaBoot(x = prim_muestra$esp3, B = i))
+```
+
+
+```{r, echo=FALSE, cache=TRUE, fig.width=6, fig.height = 4.5}
+corrBoot <- function(x, y, n){
+  muestra_boot <- sample_n(data.frame(x = x, y = y), n, replace = TRUE)
+  cor(muestra_boot$x, muestra_boot$y)
+} 
+thetas_boot <- rdply(5000, corrBoot(prim_muestra$esp3, prim_muestra$esp6, n = n))
+thetas_boot$rep <- "Bootsrap"
+
+thetas_rs <- rdply(5000, corrBoot(prim$esp3, prim$esp6, n = n))
+thetas_rs$rep <- "Muestra aleatoria"
+
+thetas_corr <- rbind(thetas_boot, thetas_rs)
+ggplot(thetas_corr, aes(x = V1)) +
+  geom_histogram(binwidth = 0.025, aes(y = ..density..)) +
+  facet_wrap(~ rep)
+
+```
+

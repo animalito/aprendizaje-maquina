@@ -1,0 +1,274 @@
+---
+title: "Logit"
+author: "Miguel Angel Escalante Serrato"
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+output:
+  html_document:
+    toc: 2
+    toc_float: yes
+  pdf_document:
+    toc: no
+in_header: mypackages.sty
+css: estilos.css
+bibliography: bib.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, error = F, message = F, warning = F)
+library(magrittr)
+library(dplyr)
+```
+
+
+# Problemas de clasificación 
+
+Una variable categórica o cualitativa es aquella que toma valores que no son numéricos, por ejemplo el color de ojos en alguna persona. 
+
+Los problemas de clasificación son aquellos donde nuestra variable respuesta es categórica. 
+
+*Ejemplos* 
+
+Reconocimiento de dígitos escritos a mano, donde nuestra variable pareciera numérica, pero en realidad no queremos que se relacionen entre si. El conjunto de respuesta es $\lbrace 0,1,...,9\rbrace$, sin embargo no queremos que el modelo reconozca que 4 es el doble que 2. 
+
+Si quisiéramos predecir si algún cliente caerá en impago o no, la respuesta está dentro del siguiente conjunto: $\lbrace Paga, No paga\rbrace$, podríamos tomar como otras variables de entrada como edad, monto de deuda, etc. 
+
+## ¿Y regresión?
+
+Los problemas de regresión son considerablemente distintos. En los problemas de regresión se toma el modelo $$Y = f(X) +\epsilon,$$ el cual expresa el valor de $Y$ en función del resto de las variables, más un error aleatorio $\epsilon$ (ruido), que depende de otras variables. El objetivo de un modelo de regresión es estimar lo mejor posible la relación sistemática representada en $f$. En los modelos de clasificación no es coherente pensar de esta manera ya que el resultado no es numérico, sino categórico. 
+
+## Clasificación
+
+El enfoque al momento de clasificar es distinto: se busca encontrar la probabilidad de que el resultado tome cada uno de los valores que podría tomar. Por ejemplo si tomamos que $X=$IMC de una persona, mientras que $Y=$tiene diabetes o no, una posible probabilidad condicional modelando los datos podría ser: $P(Y=1| X=36) = 0.7$, mientras que $P(Y=1|X=25)=0.3$. Nótese que la incertidumbre se modela en estos casos al expresar el resultado a manera de probabilidad, la parte sistemática del problema lo podemos ver con el cambio de la probabilidad con el cambio de $X$.
+
+### Probabilidades Condicionales
+
+Buscamos encontrar la parte sistemática de la relación entre X y Y, esto quiere decir que buscamos estimar las funciones \[p_y(x)=P(Y=y|X=x)\] para cada clase que se Y pueda tomar, y cada posible valor de las entradas de X. 
+
+### Ejemplo: 
+
+Tomando el ejemplo de la diabetes, tomaremos la base de datos Pima: 
+
+```{r}
+library(MASS)
+library(ggplot2)
+data(Pima.tr)
+head(Pima.tr)
+```
+
+Veamos los datos: 
+
+```{r}
+ggplot(Pima.tr, aes(x=glu, y=as.numeric(type)-1, colour=type, group=1)) + 
+  geom_jitter(position=position_jitter(height=0.05)) + 
+  geom_smooth(se = FALSE, span=0.8) + 
+  ylab('Probabilidad de tener diabetes')
+```
+
+La curva que se ve trata de estimar la probabilidad de que alguna persona tenga diabetes en función de la glucosa. Ojo que no estimamos el valor, de la variable *per se* sino la probabilidad de ocurrencia de los valores. 
+
+## Ejercicio: 
+
+Usen los datos de la librería MASS, y entrenen clasificadores con 4 y 15 vecinos más cercanos. ¿Cómo mejorar las estimaciones? ¿Cuál se desempeñará mejor? Evalúenlo. 
+
+
+## Medición del error. 
+
+Existen diversas maneras de medir el error cuando hablamos de clasificación: **Discutan**.
+
+La manera más directa de medir el error es con la pérdida 0-1, esto quiere decir contar los errores de clasificación. \[\sum_{i=1}^{n}|y_i-\hat{y}_i|\]
+Sin embargo habrá distintos problemas en los que los errores no serán iguales. ¿Se les ocurre alguno? 
+
+# Regresión Logística 
+
+Uno de los métodos más comunes para construír clasificadores es con la regresión logística. Es un método lineal de clasificación porque lo que haremos es cortar el espacio con hiperplanos lineales en el espacio de las entradas. Ejemplo en el pizarróń. 
+
+## ¿Por qué no usar una regresión lineal? 
+
+Es la pregúnta básica para este método, dado que ya tenemos la regresión lineal, ¿Por qué no nos quedamos con la misma regresión y clasificamos adaptando la respuesta? Se puede hacer un modelo siguiendo el modelo de regresión lineal: 
+\begin{equation}
+p_1(x)=\beta_0 + \sum_{j=1}^p \beta_kx_j.
+\end{equation}
+
+Clasificamos $\hat{Y}=1$ cuando $p_1(x)>0.5$ y $\hat{Y}=0$ cuando $p_1(x)<0.5$.
+
+Sin embargo podemos ver que uno de los problemas es que el lado derecho no necesariamente será una probabilidad; para efectos del modelado no es necesariamente un problema grave, pero no es deseable. 
+
+Si aumentamos el número de clases en el problema, se vuelve evidente por qué no deberíamos usar una regresión lineal, ya que esto implicaría algún tipo de relación entre las categorías. Otra solución sería correr tres regresiones lineales y sobre eso hacer la estimación, sin embargo de nuevo no podríamos interpretarlos como probabilidades. 
+
+## Regresión Logística Simple. 
+
+Supongamos que tenemos una variable binaria, si armamos el modelo de manera lineal: 
+\begin{equation}
+p_1(x)=\beta_0 + \sum_{j=1}^p \beta_kx_j.
+\end{equation}
+nos dejará valores fuera del intervalo deseado ($[0,1]$). Por lo que la idea es aplcar una función que transforme la recta real a valores dentro del intervalo $[0,1]$. Generando una nueva función: 
+$$p_1(x) = h(\beta_0+\beta_1 x_1),$$
+Donde $$h(x)\in[0,1] \forall x\in \mathbb{R}$$. ¿Qué función nos ayuda a hacer esta transformación? 
+
+## Función Logistica.
+
+Supongamos primero el caso más sencllo, donde $\beta_0=0, \beta_1=1$, para ver la función $p_1(x)=h(x)$. 
+Cuando $x\rightarrow\infty$ la función $h(x)\rightarrow\infty$. Hay una infinidad de funciones que podríamos usar, pero una de las más simples es la siguiente: 
+$$h(x)=\frac{e^x}{1+e^x}$$
+
+Veamos qué forma tiene: 
+```{r}
+h <- function(x){exp(x)/(1+exp(x)) }
+curve(h, from=-6, to =6)
+```
+
+Esta función comprime adecuadamente (para nuestros propósitos) el rango de todos los reales dentro del intervalo $[0,1]$.
+
+Ahora dejemos los valores generales de $\beta$
+El modelo de regresión logística simple está dado por
+$$p_1(x)=p_1(x;\beta)= h(\beta_0+\beta_1x_1)= \frac{e^{\beta_0+\beta_1x_1}}{1+ e^{\beta_0+\beta_1x_1}},$$
+y $$p_0(x)=p_0(x;\beta)=1-p_1(x;\beta),$$
+donde $\beta=(\beta_0,\beta_1)$.
+
+### Ejercicio {#ejercicio}
+- Encontrar $p_2$
+- Jueguen con los valores de $\beta_0$ y $\beta_1$
+
+## Glm
+
+Usaremos la función glm de
+
+```{r}
+glm(type ~ glu, data=Pima.tr, family = 'binomial')
+```
+
+Ahora si estandarizamos los coeficientes: 
+```{r}
+Pima.tr %<>% mutate(glu.st= (glu-mean(glu))/sd(glu))
+mod.1 <- glm(type ~ glu.st, data=Pima.tr, family = 'binomial')
+coef(mod.1)
+```
+
+
+Graficamos la curva $\hat{p}_1 (x)$ estimada bajo el modelo de regresión logística:
+
+```{r}
+quantile(Pima.tr$glu.st)
+grid.glu <- seq(-2.2, 2.4, 0.1)
+preds.grid <- predict(mod.1, newdata = data.frame(glu.st=grid.glu), 
+  type='response')
+dat.graf <- data.frame(glu.st=grid.glu, prob=preds.grid)
+ggplot(dat.graf, aes(x=glu.st, y = prob)) + geom_line()
+```
+Grafiquen también esta curva en las unidades originales.
+
+# Regresión Logística Multivariada 
+
+Consideremos ahora que tenemos entradas $X_1,X_2,\ldots, X_p$, y que la 
+respuesta es $Y$ con posibles valores 0 o 1. Suponemos entonces que
+
+
+$$p_1(x)=p_1(x;\beta)= h(\beta_0+\beta_1x_1+\cdots+\beta_px_p)= 
+\frac{e^{\beta_0+\beta_1x_1+\beta_2x_2+\cdots+\beta_px_p}}{1+ e^{\beta_0+\beta_1x_1+\beta_2x_2+\cdots+\beta_px_p}},$$
+
+## Ejercicio {#ejercicio}
+
+Ahrora ajusten con los mismos datos, pero usando todas las variables. Recuerden estandarizar las variables. 
+
+
+
+# Análisis de Error 
+
+Hasta ahora hemos usado la tasa de clasificación incorrecta para medir el error de los modelos. Sin embargo muchas veces los costos no son iguales para los distintos errores: Distintos problemas implican distintos costos de clasificación errónea. 
+
+Podríamos construír una función que refleje esos errores, pero en la práctica es muy difícil estimarlos. Por lo que presentamos distintas maneras de ver los errores a continuación: 
+
+## Matriz de Confusión 
+La  **matriz de confusión** de un clasificador binario está dada por $$C_{ij}=\mbox{núm de casos de clase verdadera j clasificados en clase i}$$.
+
+### Ejemplo {#ejemplo}
+
+```{r, echo=FALSE}
+tabla.1 <- data.frame(A=c(50,20,20), B=c(2,105,10), C=c(0,30,30))
+rownames(tabla.1) <- c('A.pred', 'B.pred', 'C.pred')
+tabla.1 <- as.table(as.matrix(tabla.1))
+tabla.1
+```
+
+Ahora en proporciones:
+```{r}
+round(prop.table(tabla.1, 2),2)
+```
+
+
+## Matriz de confusión para clasificación binaria
+
+Supongamos que la variable a predecir es binaria, y llamaremos a una de las clases como positivo y a otra negativo. 
+Por ejemplo,  positivo puede querer decir que una transacción es fraudulenta, o que una persona tiene una enfermedad.
+
+Hay dos tipos de errores en un clasificador binario (positivo - negativo):
+
+- Falsos positivos (fp): clasificar como positivo a un caso negativo.
+- Falsos negativos (fn): clasificar como negativo a un caso positivo.
+
+A los casos clasificados correctamente les llamamos positivos verdaderos (pv)
+y negativos verdaderos (nv).
+
+Nótese que un clasificador bueno, en general, es uno que tiene la mayor parte de los casos en la diagonal de la matriz de confusión.
+
+
+Podemos estudiar a nuestro clasificador en términos de las proporciones de casos que caen en cada celda, que dependen del desempeño del clasificador en cuanto a casos positivos y negativos. La nomenclatura es
+confusa, pues en distintas áreas se usan distintos nombres para estas proporciones:
+
+
+- **Tasa de falsos positivos** (o *fallout*)
+$$\frac{fp}{fp+nv}=\frac{fp}{negativos}$$
+- **Tasa de falsos negativos**  (o  *miss*)
+$$\frac{fn}{pv+fn}=\frac{fn}{positivos}$$
+- **Especificidad** (qué tan bien descartamos negativos). También se llama *tasa de negativos verdaderos*
+$$\frac{nv}{fp+nv}=\frac{nv}{negativos}$$
+- **Sensibilidad**} (qué tan bien detectamos positivos). También se llama *tasa de positivos verdaderos*, o  *Recall*:
+$$\frac{pv}{pv+fn}=\frac{pv}{positivos}$$ 
+
+
+Y también otras que tienen como base las predicciones:
+
+- **valor predictivo positivo**} o  **Precisión**:
+$$\frac{vp}{vp+fp}=\frac{vp}{pred.positivo}$$
+- **valor predictivo negativo**
+$$\frac{vn}{fn+vn}=\frac{vp}{pred.negativo}$$
+
+Geralmente tomamos dos cantidades de estas que reflejen comportamiento del clasificador con casos negativos y con casos positivos. El criterio que utilizaremos más comunmente será Sensibilidad-Especificidad.
+
+## Ejercicio {#ejercicio}
+
+Calcular la matriz de confusión (sobre la muestra de prueba) para el clasificador logístico de diabetes en términos de glucosa. Calcula adicionalmente con la muestra de prueba sus valores de especificidad y sensibilidad, y precisión y recall.
+
+```{r}
+modelo.1 <- glm(type ~ glu, data = Pima.tr, family = 'binomial')
+preds.1 <- fitted(modelo.1) > 0.5
+head(preds.1)
+```
+
+
+# Puntos de corte para clasificador Binario
+¿Qué pasa si para nuestros fines no tenemos la sensibilidad y especificidad esperada? Podemos hacer una adecuación a nuestra regla de decisión, cambiando que la probabilidad de corte no sea 0.5: 
+
+Para $0<d<1$, podemos utilizar nuestras estimaciones
+$\hat{p}_1 (x)$ para construir un clasificador alternativo poniendo:
+
+- Predecir *positivo* si $\hat{p}_1 (x)>d$,
+- Predecir *negativo* si $\hat{p}_1 (x)<d$
+
+Analizemos en el ejemplo de la diabetes, si cambiamos el punto de corte:
+
+```{r}
+probs.prueba <- predict(modelo.1, newdata=Pima.te, type='response')
+preds.prueba <- probs.prueba > 0.7
+tab.confusion.prueba <- table(preds.prueba, Pima.te$type)
+tab.confusion.prueba
+prop.table(tab.confusion.prueba, 2)
+```
+
+```{r}
+probs.prueba <- predict(modelo.1, newdata=Pima.te, type='response')
+preds.prueba <- probs.prueba > 0.3
+tab.confusion.prueba <- table(preds.prueba, Pima.te$type)
+tab.confusion.prueba
+prop.table(tab.confusion.prueba, 2)
+```

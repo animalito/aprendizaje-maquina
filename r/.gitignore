@@ -1,0 +1,14 @@
+**/*.html
+**/*.pdf
+**/*_cache/*
+**/*_files/*
+**/*.rdata
+**/*.RData
+**/*.csv
+**/*.Rdata
+**/*.xlsx
+**/*.test
+**/*.train
+**/*.txt
+**/*.info
+**/*ubyte
