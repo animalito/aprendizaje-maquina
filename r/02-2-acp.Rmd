@@ -2,11 +2,12 @@
 title: "Análisis de componentes principales"
 author: "Andrea Fernandez"
 date: '`r paste0("Última actualización: ", lubridate::now())`'
-output: 
+output:
   ioslides_presentation:
     css: ioslides.css
     mathjax: local
-    self_contained: false
+    self_contained: no
+  slidy_presentation: default
 ---
 
 ```{r setup, include=FALSE}
@@ -20,18 +21,6 @@ library(tidyr)
 # ACP
 
 Basados en notas de http://teresa-ortiz.squarespace.com/est-multivariada
-
-## Contexto
-
-Casos de variables latentes continuas.
-
-Motivación: los puntos realmente están en una dimensión menor que en la que los
-tenemos (e.g. ocupan más espacio del que necesitan). 
-
-Pensemos en imágenes, en particular usamos los dígitos de la base de datos [mnist](http://yann.lecun.com/exdb/mnist/) en donde en una matriz de $64x64$
-pixeles, se insertan dígitos. 
-
-<img src="img/digit_rotate.jpg" style="width: 600px;"/>
 
 ## ACP {.smaller}
 
@@ -71,10 +60,36 @@ Al proyectar en más de una dimensión, se elige a cada paso subsecuente una
 ortogonal a las direcciones anteriores. Puede demostrarse que esta es la proyección
 óptima.
 
+## Aplicaciones
+
+Existen múltiples aplicaciones del ACP. Veremos algunos ejemplos:
+
+- Compresión de datos
+- Preprocesamiento de datos
+- Construcción de indicadores (ejemplo de reducción de dimensionalidad)
+
+# Compresión de datos
+
+## Contexto
+
+Casos de variables latentes continuas.
+
+Motivación: los puntos realmente están en una dimensión menor que en la que los
+tenemos (e.g. ocupan más espacio del que necesitan). 
+
+Pensemos en imágenes, en particular usamos los dígitos de la base de datos [mnist](http://yann.lecun.com/exdb/mnist/) en donde en una matriz de $64x64$
+pixeles, se insertan dígitos. 
+
+<img src="img/digit_rotate.jpg" style="width: 600px;"/>
+
 ## Aplicaciones: compresión 
+
+Lectura de datos (imagenes)
 
 ```{r}
 library(deepnet)
+library(RColorBrewer)
+
 mnist <- load.mnist("mnist")[["train"]]
 ind_tres <- mnist[[3]] == 3
 data_tres <- mnist[[2]][ind_tres, ]
@@ -83,7 +98,26 @@ data_tres <- mnist[[2]][ind_tres, ]
 dim(data_tres)
 ```
 
-## Aplicaciones: compresión 
+## Aplicaciones: compresión {.tiny}
+
+Visualizacion de las imagenes
+
+```{r}
+par(mfrow=c(1,5))
+
+imageD <- function(vec, main = NULL){
+  mat_digit <- matrix(vec, nrow = 28)[, 28:1]
+  image(mat_digit, col = brewer.pal(5, "GnBu"), xaxt = "n", yaxt = "n", 
+    bty = "n", asp = 1, main = main)
+}
+
+par(mar = rep(0.5, 4))
+for(i in sample(1:nrow(data_tres), 5)){
+  imageD(data_tres[i, ])
+}
+```
+
+## Aplicaciones: compresión {.tiny}
 
 Como cada eigenvector es un vector en el espcio original de $D$ dimensiones 
 podemos representarlos como imágenes.
@@ -96,12 +130,12 @@ S <- cov(data_tres)
 eigen_S <- eigen(S)
 lambda <- eigen_S$values
 u <- eigen_S$vectors
-# par(mar=c(1,1,1,1))
-# par(mfrow=c(1,5))
-# imageD(tres_mean)
-# for(i in 1:4){
-#   imageD(u[, i])  
-# }
+par(mar=c(1,1,1,1))
+par(mfrow=c(1,5))
+imageD(tres_mean)
+for(i in 1:4){
+  imageD(u[, i])
+}
 ```
 
 ## Aplicaciones: compresión {.tiny}
@@ -123,22 +157,26 @@ plot(J, type = "l")
 La compresión está en que reemplazamos cada vector de observaciones de dimensión 
 $D$ ($y_i$) por un vector de dimensión $M$.
 
+## Aplicaciones: compresión {.tiny}
+
 La siguiente figura muestra la compresión para distintos valores de $M$ del
 prmer dígito de la base de datos. 
 
 ```{r, fig.width=9.4, fig.height=2.5}
-# tres_1 <- data_tres[3, ]
-# par(mfrow=c(1,5))
-# imageD(tres_1)
-# for(M in c(1, 10, 50, 300)){
-#   u_M <- u[, 1:M]
-#   y_M <- tres_1 %*% u_M
-#   y_approx <- tres_mean + y_M %*% t(u_M)
-#   imageD(y_approx)
-# }
+tres_1 <- data_tres[3, ]
+par(mfrow=c(1,5))
+imageD(tres_1)
+for(M in c(1, 10, 50, 300)){
+  u_M <- u[, 1:M]
+  y_M <- tres_1 %*% u_M
+  y_approx <- tres_mean + y_M %*% t(u_M)
+  imageD(y_approx)
+}
 ```
 
-## Aplicaciones: preprocesamiento
+# Preprocesamiento de datos
+
+## Aplicaciones: preprocesamiento {.smaller}
 
 Objetivo: no es la reducción de dimensión sino la transformación del conjunto de
 datos de manera que se estandaricen algunas de sus propiedades.
@@ -167,56 +205,113 @@ observación $y_i$ definimos su valor transformado
 $$z_i=L^{-1/2}U^T(y_i-\bar{y})$$
 es claro que el conjunto $(z_1,...,z_N)$ tiene media cero.
 
-Veamos ahora la 
-covarianza:
+## Aplicaciones: preprocesamiento {.smaller}
+
+Veamos ahora la covarianza:
 
 $$\frac{1}{N}\sum_{j=1}^Nz_jz_j^T=\frac{1}{N}\sum_{j=1}^NL^{-1/2}U^T(y_j-\bar{y})(y_j-\bar{y})^TUL^{-1/2}$$
 $$=L^{-1/2}U^TSUL^{-1/2}=L{-1/2}LL^{-1/2}=I$$
 
-## Ejercicio: whitening
+## Ejercicio: whitening (1/5)
 
 A la operación descrita se le conoce como _whitening_ o _sphereing_.
 
 Aplicala a los datos de faithful y compara los datos crudos contra
 los preprocesados usando gráficas.
 
+1. Pinta los datos de faithful en ggplot con eruptions en el eje x y waiting en el y.
+2. Realiza un pca con los datos utilizando la funcion *prcomp*
+3. Grafica los primeros dos componentes principales con ggplot
 
-# Clustering
 
-Basado en http://fg-clases.squarespace.com/metodos-analiticos-/2015/4/16/clase-11-clustering
+```{r, eval = F, echo = F}
+head(faithful)
+par(mfrow=c(1, 2))
 
-## Ejemplo clásico
+ggplot(faithful, aes(x = eruptions, y = waiting)) +
+  geom_point()
 
-```{r}
-ggplot(filter(iris, Species %in% c('setosa','versicolor')), 
-       aes(x=Sepal.Length, y=Petal.Width)) + geom_point()
+faith_pca <- prcomp(faithful, scale. = TRUE)
+
+faithful$pc1 <- faith_pca$x[, 1]
+faithful$pc2 <- faith_pca$x[, 2]
+ggplot(faithful, aes(x = pc1, y = pc2)) +
+  geom_point()
 ```
 
-## Ejemplo clásico
+# Construcción de indicadores
 
+## Datos
+
+Los datos `conapo_2010.csv` reportan el porcentaje de la población analfabeta, 
+sin primaria terminada, sin drenaje, etc. En este ejercicio utilizarás esta base 
+de datos para construir un índice de carencias (el ínice de marginación se 
+construye a nivel localidad y no municipio).
+
+Este índice es utilizado por el Consejo Nacional de Población en México para 
+medir la marginación de distintas localidades en el territorio del país.
+
+## ACP
+
+  * Utiliza la función prcomp de R para realizar PCA.
+  
 ```{r}
-ggplot(filter(iris, Species %in% c('setosa','versicolor')), 
-       aes(x=Sepal.Length, y=Petal.Width, colour=Species)) + geom_point()
+conapo <- read.table("datos/conapo_2010.csv", header=TRUE, quote="\"")
+pca <- prcomp(conapo[which(sapply(conapo, class)=="numeric")])
+
+names(pca)
 ```
 
-## Ejemplo más real
+## Porcentaje de varianza explicada {.tiny}
+
+  * ¿Qué porcentaje de la varianza en los datos está explicado por la
+primera componente? (Realiza una gráfica usando _screeplot_)
 
 ```{r}
-ggplot(airquality, aes(x=Ozone, y=Wind)) + geom_point()
+par(mfrow=c(1, 1))
+screeplot(pca)
+
+summary(pca)
 ```
 
-donde no hay clusters bien definidos, o en dimensión más alta (100 variables, 10 casos) observamos cosas como la siguiente:
+Explica el 62.15\% de la varianza.
+
+## Gráficos útiles para interpretar: biplot {.tiny}
+
+  * Realiza una gráfica utilizando la función biplot, si no has estudiado
+PCA antes discutiremos esta gráfica en la clase.
+
 ```{r}
-mat.1 <- matrix(rnorm(10*100), ncol=100)
-dist(mat.1, method = 'euclidean')
+biplot(pca)
 ```
 
-## Enfoques basados en modelos
+## Tabla útil para interpretar {.smaller}
 
-- Introducir variables latentes que expliquen diferencias en las distribuciones
-de las variables observadas.
-- Hay metodos *combinatorios* que usan las variables originales de manera directa
-para tratar de segmentar las observaciones en grupos a través de los cuáles se
-minimiza alguna función objetivo (e.g. minimizar la dispersión dentro de los 
-grupos generados o maximizar la distancia entre los centroides de los grupos)
+```{r}
+library(knitr)
+pca.pesos <- function(loadings, cuantas.comp=n){
+    # Recibe una matriz de loadings de un PCA.
+    # Recibe cuantas.comp=numero de componentes que quieres, defaultea en todos
+    # Escupe un df con signo si pesa mas que 0.5 del maximo. (signo) si pesa (0.25,0.5] del maximo y nada si pesa menos que 0.25
+    n <- dim(loadings)[2]
+    max.divide <- function(x){
+    max <- max(abs(x))
+    ifelse(abs(x) < 0.25*max, "",
+    ifelse(abs(x) < 0.5*max, paste0("(", sign(x), ")"), sign(x)))
+    }
+    if(cuantas.comp < n){
+    loadings <- loadings[, 1:cuantas.comp]
+    }
+    results <- cbind(rownames(loadings),as.data.frame(sapply(as.data.frame(loadings), max.divide)))
+    names(results) <- c('variable', colnames(loadings))
+    results
+}
+
+```
+
+## Tabla útil para interpretar {.tiny}
+
+```{r, echo = F}
+kable(pca.pesos(pca$rotation))
+```
 

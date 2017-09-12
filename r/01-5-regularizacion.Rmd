@@ -42,6 +42,9 @@ beta
 
 Ahora generamos datos de entrenamiento y de prueba: 
 
+- Los datos para **X** vienen de una $N(0,1)$ y le sumamos ruido de otra $N(0,1)$.
+- Los datos para $Y$ se constuyen con los datos de **X** recien generados.
+
 ```{r}
 sim.1 <- function(n, m, p=100){
   #n = casos de entrenamiento, m= casos de prueba, p=num variables
@@ -55,9 +58,20 @@ sim.1 <- function(n, m, p=100){
 salida <- sim.1(n=400, m=2000)
 names(salida)
 
+# Los datos de entrenamiento generados tienen dimension:
+dim(salida$mat.entrena)
+length(salida$y.entrena)
+# Los datos de prueba tienen dimension: 
+dim(salida$mat.prueba)
+length(salida$y.prueba)
+
+## Entrenamos un modelo
 mod.1 <- glm.fit(x = salida$mat.entrena,
                  y = salida$y.entrena, family = binomial())
 
+## Pintamos coeficientes:
+# x> "verdaderos" *de donde simulamos los datos* 
+# y> estimados
 qplot(beta, mod.1$coefficients) + 
   xlab('Coeficientes') + 
   ylab('Coeficientes estimados') +
@@ -92,16 +106,28 @@ dat.sim <- ldply(1:50, function(i){
   data.frame(rep=i, vars=names(coef(mod.2)), coefs=coef(mod.2))
 })
 
+## Que se guarda en dat.sim?
+head(dat.sim)
+
+# Reordenamos segun la mediana de las estimaciones de los coefs para cada var
 dat.sim$vars <- reorder(as.character(dat.sim$vars), dat.sim$coefs, median)
-ggplot(dat.sim, aes(x=vars, y=coefs)) + geom_boxplot() +
+# Hacemos un boxplot de las estimaciones de los coeficientes
+ggplot(dat.sim, aes(x=vars, y=coefs)) + 
+  geom_boxplot() +
   geom_line(data=data.frame(coefs=beta, vars=names(coef(mod.2))), 
-    aes(y=beta, group=1), col='red',size=1.1) + coord_flip()
+    aes(y=beta, group=1), col='red',size=1.1) + 
+  coord_flip() +
+  ggtitle("Variaciones en las estimaciones de los coeficientes asociados a cada variable")
 
 ```
 
 En rojo los coeficientes reales.
 
-En este caso tenemos opción a simular tantas veces queramos nuestro modelo, sin embargo en la vida real muy probablemente se tendrán sólo una de estas muestras, por lo que se vuelve evidente la necesidad de una manera de controlar esta varianza. Ahora, esto ¿cómo afecta el rendimiento del modelo? Ojo que hasta ahora sólo hemos visto la relación entre los coeficientes y sus estimados; ahora veamos cómo se ven las estimaciónes, de probabilidad. 
+En este caso tenemos opción a simular tantas veces queramos nuestro modelo, sin embargo en la vida real muy probablemente se tendrán sólo una de estas muestras, por lo que se vuelve evidente la necesidad de una manera de controlar esta varianza. 
+
+Ahora, esto **¿cómo afecta el rendimiento del modelo?** 
+
+Ojo que hasta ahora sólo hemos visto la relación entre los coeficientes y sus estimados; ahora veamos cómo se ven las estimaciónes, de probabilidad. 
 
 ```{r}
 dat.entrena <- data.frame(prob.hat.1=h(mod.1$fitted.values), prob.1=h(salida$mat.entrena%*%beta),
@@ -109,9 +135,16 @@ dat.entrena <- data.frame(prob.hat.1=h(mod.1$fitted.values), prob.1=h(salida$mat
 dat.prueba <- data.frame(prob.hat.1=h(salida$mat.prueba%*%(mod.1$coefficients)), 
   prob.1=h(salida$mat.prueba%*%beta),
   clase = salida$y.prueba)
-ggplot(dat.entrena, aes(x=prob.1, y=prob.hat.1, colour=factor(clase))) + geom_point()
-ggplot(dat.prueba, aes(x=prob.1, y=prob.hat.1, colour=factor(clase))) + geom_point()
+ggplot(dat.entrena, aes(x=prob.1, y=prob.hat.1, colour=factor(clase))) + 
+  geom_point() +
+  ggtitle("y vs. y_hat: en entrenamiento")
+ggplot(dat.prueba, aes(x=prob.1, y=prob.hat.1, colour=factor(clase))) +
+  geom_point() +
+  ggtitle("y vs. y_hat: en prueba")
 
+# Matriz de confusion
+table(dat.prueba$prob.hat.1 > 0.5, dat.prueba$clase)
+prop.table(table(dat.prueba$prob.hat.1 > 0.5, dat.prueba$clase), margin=2)
 ```
 
 De nuevo si la estimación fuera perfecta, tendría que ser una línea recta. no es un problema de modelado ya que estamos usando el modelo ideal para estos datos **simulados**. El problema radica en la variabilidad de los coeficientes. Para evitar esto, podemos penalizar los coeficientes, de tal forma que no se adapten tanto a los datos. 
@@ -214,9 +247,11 @@ dat.r <- ldply(1:50, function(i){
 
 devianza.prueba <- ddply(dat.r, c('i','lambda'), summarise, 
   dev = devianza(prob.hat.1, clase))
-qplot(log(devianza.prueba$lambda), devianza.prueba$dev)
+qplot(log(devianza.prueba$lambda), devianza.prueba$dev) + 
+  ggtitle("Log lambda vs. devianza")
 mod.ridge$lambda
 ```
+
 Ahora tenemos que escojer la mejor lambda para el modelo ridge, (el que minimiza la devianza). 
 
 ```{r}

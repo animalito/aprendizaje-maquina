@@ -15,9 +15,52 @@ library(stringdist)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
+library(knitr)
 ```
 
 # K-medias
+
+Basado en http://fg-clases.squarespace.com/metodos-analiticos-/2015/4/16/clase-11-clustering
+
+## Ejemplo clásico
+
+```{r}
+ggplot(filter(iris, Species %in% c('setosa','versicolor')), 
+       aes(x=Sepal.Length, y=Petal.Width)) + geom_point()
+```
+
+## Ejemplo clásico
+
+```{r}
+ggplot(filter(iris, Species %in% c('setosa','versicolor')), 
+       aes(x=Sepal.Length, y=Petal.Width, colour=Species)) + geom_point()
+```
+
+## Ejemplo más real (1/2)
+
+```{r}
+ggplot(airquality, aes(x=Ozone, y=Wind)) + geom_point()
+```
+
+donde no hay clusters bien definidos
+
+## Ejemplo más real (2/2)
+
+O donde tienes dimensión más alta (100 variables, 10 casos) observamos cosas como la siguiente:
+
+```{r}
+mat.1 <- matrix(rnorm(10*100), ncol=100)
+dist(mat.1, method = 'euclidean')
+```
+
+## Enfoques basados en modelos
+
+- Introducir variables latentes que expliquen diferencias en las distribuciones
+de las variables observadas.
+- Hay metodos *combinatorios* que usan las variables originales de manera directa
+para tratar de segmentar las observaciones en grupos a través de los cuáles se
+minimiza alguna función objetivo (e.g. minimizar la dispersión dentro de los 
+grupos generados o maximizar la distancia entre los centroides de los grupos)
 
 ## K-medias: descripción {.smaller}
 
@@ -38,7 +81,7 @@ de particiones posibles es muy grande.
 - La definimos la medida de variación dentro de los clusters como el promedio de distancias
 euclideanas al cuadrado dentro del cluster
 
-$W(C_k) =\frac{1}{|C_k|}\sum_{i,j\in C_k} ||x_i-x_j||^2,$$
+$$W(C_k) =\frac{1}{|C_k|}\sum_{i,j\in C_k} ||x_i-x_j||^2,$$
 
 De notar una serie de particularidades en esta ecuación, se extrae el 
 algoritmo.
@@ -151,11 +194,12 @@ agrup <- agrup.1 %>% group_by(id, k) %>%
 ggplot(agrup, aes(x=lat, y=long, colour=factor(k))) + geom_point()
 ```
 
-## Usando la funcion k-means {.tiny}
+## Usando la funcion k-means {.smaller}
 
 ```{r}
 set.seed(2800)
-k_medias <- kmeans(quakes.1[, c('lat','long')], centers = 5, nstart=30) # escoger varios comienzos aleatorios=
+k_medias <- kmeans(quakes.1[, c('lat','long')], centers = 5, nstart=30) 
+# escoger varios comienzos aleatorios=
 str(k_medias)
 ```
 
@@ -181,8 +225,7 @@ ggplot(df, aes(x=x, y=y, colour=factor(grupo))) + geom_point()
 
 Nótese que k-means logró encontrar una buena solución, y esta solución puede
 ser muy útil para nuestros fines (agrupa puntos "similares"). Sin embargo, en esta situación debemos reconocer que los tamaños, las posiciones,
-y el número de grupos es fundamentalmente arbitrario, y una "buena" solución depende de 
-nuestros fines.
+y el número de grupos es fundamentalmente arbitrario, y una "buena" solución depende de nuestros fines.
 
 ## ¿Cuándo usar o no usar k-medias? {.tiny}
 
@@ -202,12 +245,10 @@ ggplot(df, aes(x=x, y=y, colour=factor(grupo))) + geom_point()
 ```
 
 La solución es bastante diferente. Esta diferencia no se debe al comienzo aleatorio
-del algoritmo. Se debe más bien a que los grupos se están definiendo por variación muestral,
-y pequeñas diferencias en las muestras.
+del algoritmo. Se debe más bien a que los grupos se están definiendo por variación muestral, y pequeñas diferencias en las muestras.
 
 En esta situación, debemos aceptar que la **responsabilidad** de escoger la solución
-final está en nuestras manos, y no del algoritmo, y entender que hay arbitrariedad considerable en los segmentos encontrado sus tamaños. Esto no le quita necesariamente utilidad a la segmentación resultante, pero hay que recordar que los grupos que encontramos
-son en ciertos aspectos arbitrarios.
+final está en nuestras manos, y no del algoritmo, y entender que hay arbitrariedad considerable en los segmentos encontrado sus tamaños. Esto no le quita necesariamente utilidad a la segmentación resultante, pero hay que recordar que los grupos que encontramos son en ciertos aspectos arbitrarios.
 
 ## Selección de número de clusters {.tiny}
 
@@ -238,10 +279,12 @@ qplot(1:length(tot.within), tot.within, geom='line') + geom_point()
 
 En este caso, parece que 3 es un buen número.
 
-## Caracterización y descripción de grupos {.tiny}
+## Caracterización y descripción de grupos 
 
 Lo primero que tenemos que hacer para entender una segmentación dada es 
 caracterizar a los grupos en cuanto a las variables que usamos para segmentar.
+
+## European social survey {.smaller}
 
 European Social Survey (ESS) data from the 2008 (fourth) round in the United Kingdom. The data are from a questionnaire on "what the responsibilities of governments should or should not be". 
 
@@ -280,7 +323,7 @@ nombres <- data.frame(var = c("gvjbevn", "gvhlthc", "gvslvol", "gvslvue", "gvcld
 nombre = c('trabajo_a_todos','cuidados_salud_enfermos','garantizar_nivel_mayores','garantizar_nivel_desempleados','ayuda_padres_trabajadores','ausencia_cuidar_enfermos','beneficios_pobreza','beneficios_igualdad','beneficios_fam_trabajo'))
 ```
 
-## Caracterización y descripción de grupos {.tiny}
+## Caracterización y descripción de grupos {.smaller}
 
 Tenemos unas variables que están en escala 1-5 y otras 1-10. 
 Normalizamos dividiendo cada pregunta por
@@ -365,16 +408,95 @@ ggplot(resumen.2, aes(x=variable, y=perfil,
   coord_flip() + geom_line() + facet_wrap(~cluster) + geom_hline(yintercept=0, colour='gray')
 ```
 
-## Caracterización y descripción de grupos {.smaller}
+
+## Discusion: ¿Conviene estandarizar variables?
+
+La respuesta es que esto depende del problema.
+
+Hay casos en donde no queremos estandarizar las columnas (por ejemplo, si estamos revisando imagenes y nuestros datos son intensidades de pixeles), pues buscamos que la segmentación esté dada por aquellos lugares donde hay más variación. 
+
+En el primer ejemplo también es dudoso: quisiéramos segmentar a lo largo de variables donde la gente tiene más dispersión. 
+
+## Discusion: ¿Conviene estandarizar variables? {.smaller}
+
+Sin embargo, en otros casos puede ser más interesante intentar alguna estandarización. Por ejemplo, si quisiéramos segmentar datos como siguen:
 
 ```{r}
-tab <- table(ess4.gb$stratval)
-names(tab[tab > 50])
-# tab.1 <- data.frame(
-#   round(100*prop.table(table(dat.na$stratval, sol.cl$cluster),margin=2),2)
-#   )
-# tab.2 <- tab.1 %>% group_by(Var1) %>%
-#   mutate(perfil = Freq/mean(Freq))
-# tab.3 <- tab.2 %>% select(-Freq) %>%spread(Var2, perfil) %>% arrange(`5`) %>% data.frame
-# tab.3[tab.3$Var1 %in% names(tab[tab > 50]),]
+head(diamonds[, c('carat','depth','table','price')])
 ```
+
+tiene sentido estandarizar las variables para que el precio no domine la segmentación.
+
+## Discusion: ¿Conviene hacer componentes principales antes de segmentar?
+
+Una técnica popular
+para segmentar en encuestas como la de funciones del gobierno que mostramos arriba incluye un primer paso donde calculamos componentes principales. Esto puede ser una buena idea para agrupar atributos en "temas", y que los "temas" tengan el mismo peso en la segmentación. De otra manera, la segmentación está más sesgada hacia los "temas" que contengan más atributos.
+
+## Discusion: ¿Conviene hacer componentes principales antes de segmentar?
+
+```{r, echo = F}
+biplot(comps <- princomp(dat.3[,-1]))
+#biplot(comps, choices=c(1,3))
+```
+
+## Discusion: ACP antes de clustering
+
+```{r}
+plot(comps)
+```
+
+## Discusion: ACP antes de clustering
+
+```{r}
+dat.3$score.1 <- comps$scores[,1]
+dat.3$score.2 <- comps$scores[,2]
+sol <- kmeans(dat.3[,c('score.1','score.2')], centers=5, nstart=10)
+dat.3$grupo.cmp <- sol$cluster
+ggplot(dat.3, aes(x=score.1, y=score.2, colour=factor(grupo.cmp))) + geom_point()
+```
+
+## Discusion: ACP antes de clustering
+
+Como discutimos arriba, cuando segmentamos de esta forma, en dimensión baja, puede ser buena idea escoger los segmentos de forma más manual.
+
+## Discusion: Escalas de acuerdo/descuerdo
+
+Muchas veces conviene escalar las calificaciones **por individuo** antes de segmentar: es decir, usamos "acuerdo relativo" de cada persona para segmentar. Esto muchas veces produce segmentos más interpretables.
+
+## Discusion: Escalas de acuerdo/descuerdo
+
+```{r, echo = F}
+dat.4 <- dat.3 %>% dplyr::select(-contains('beneficios')) %>%
+  gather(variable, value, ausencia_cuidar_enfermos:trabajo_a_todos) %>%
+  mutate(value =10*value) %>%
+  group_by(idno) %>%
+  mutate(value.c = value - mean(value)) 
+dat.5 <- dat.4 %>%
+  dplyr::select(-value) %>%
+  spread(variable, value.c)
+set.seed(28801)
+sol.1 <- kmeans(dat.5[,-1], centers=4, nstart=20, iter.max=100)
+cluster.df <- data.frame(idno=dat.5$idno, grupo = sol.1$cluster)
+dat.6 <- dat.4 %>% left_join(cluster.df) 
+res <- dat.6 %>% group_by(variable, grupo) %>%
+  summarise(media = mean(value.c))
+ggplot(res, aes(x=variable, y=media, colour=factor(grupo), group=grupo) ) + geom_point() +
+  geom_line(size=1.2) + coord_flip() 
+```
+
+## Clustering: otras recomendaciones generales {.smaller}
+
+**La selección de variables para segmentar, las decisiones de preproceso, el número de clusters seleccionados pueden tener un efecto dramático en los resultados de la segmentación.**
+
+La segmentación debe ser un proceso iterativo donde intentamos distintas cosas, y consideramos la interpretabilidad y utilidad potencial del resultado. Es bueno intentar distintas variables, distintas estandarizaciones, componentes principales, y distinto número de grupos: todos estos experimentos revelan potencialmente estructuras distintas en los datos que pueden ser más o menos interesantes o más o menos útiles.
+
+## Clustering: otras recomendaciones generales {.smaller}
+
+**Si el posible, es buena idea correr la segmentación con submuestras (o replicaciones bootstrap) para entender la estabilidad de la segmentación que proponemos.**
+
+También recordamos que tomarse demasiado en serio (como "fija","estructura natural",
+"así son los segmentos") una segmentación es no tomarsela en serio.
+
+Hay muchos aspectos y puntos de vista distintos útiles con los que se puede segmentar, y pueden dar resultados muy distintos.
+
+

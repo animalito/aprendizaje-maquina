@@ -1,0 +1,79 @@
+---
+title: "Ejemplo de k-medias"
+css: estilos.css
+date: '`r paste0("Última actualización: ", lubridate::now())`'
+output: 
+  html_document:
+    toc: 1
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = T)
+library(dplyr)
+library(tidyr)
+```
+
+# Caracterización de segmentos.
+
+Veamos otro ejemplo, utilizaremos la base de datos *Handwritten Digit Recognition Data*
+
+This example is a character recognition task: classification of handwritten numerals. This problem captured the attention of the machine learning and neural network community for many years, and has remained a benchmark problem in the field.
+
+Normalized handwritten digits, automatically scanned from envelopes by the U.S. Postal Service. The original scanned digits are binary and of different sizes and orientations; the images here have been deslanted and size normalized, resulting in 16 x 16 grayscale images (Le Cun et al., 1990).
+
+The data are in two gzipped files, and each line consists of the digit id (0-9) followed by the 256 grayscale values.
+
+There are 7291 training observations and 2007 test observations.
+
+
+
+```{r}
+library(ElemStatLearn)
+library(parallel)
+library(ggplot2)
+```
+
+
+```{r, cache=T}
+dim(zip.train)
+zip.train[1:6, 1:6]
+
+dat <- zip.train[,-1]
+nrow(dat)
+ajustes.km <- mclapply(1:40, function(k){
+  kmedias <- kmeans(dat, centers = k, nstart = 10, iter.max=40)    
+  kmedias
+}, mc.cores=6)
+tot.within <- sapply(ajustes.km, function(aj){ aj$tot.withinss})
+qplot(1:length(tot.within), tot.within, geom='line') + geom_point()
+```
+
+Ahora perfilamos los segmentos según los dígitos que contienen:
+
+```{r}
+grupos <- ajustes.km[[25]]$cluster
+tabla <- table(ajustes.km[[25]]$cluster, zip.train[,1])
+tabla
+round(100*prop.table(tabla, margin=2))
+round(100*prop.table(tabla, margin=1))
+
+```
+
+
+¿Cómo es el segmento 15?
+
+```{r}
+digits <- vector(length=10, mode="list")
+names(digits) <- 0:9
+rows <- sample(which(grupos==15),10)
+for (j in 0:9) {
+    digits[[j+1]] <- do.call("cbind", lapply(as.list(rows[[j+1]]), 
+                       function(x) zip2image(zip.train, x)) )
+}
+im <- do.call("rbind", digits)
+image(im, col=gray(256:0/256), zlim=c(0,1), xlab="", ylab="" )   
+
+```
+
+
