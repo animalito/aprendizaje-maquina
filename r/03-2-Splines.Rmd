@@ -56,7 +56,22 @@ Resulta importante tener una manera de controlar la complejidad de los modelos, 
 - Métodos de selección de variables que agregan las funciones base $h_m$ que agregan más al ajuste del modelo. Más de esto más adelante.
 - Métodos de regularización como vimos hace dos clases. Ridge sólo regulariza los parámetros, mientras que Lasso ayuda con regularización y selección de variables. 
 
-##Ejercicio {#ejercicio}
+# Relajando el supuesto de linealidad
+
+Aunque los métodos que hemos visto permiten controlar la complejidad, por ejemplo con regularización, seguimos utilizando un modelo lineal. Intentaremos relajar ese supuesto mientras que intentamos mantener la interpretabilidad.
+
+Examinaremos extensiones simples de los modelos lineales como la regresión polinomial y las funciones step, y luego métodos más sofisticados como splines y regresión local.
+
+Primero, la intuición.
+
+- La *regresión polinomial* extiende al modelo lineal al agregar predictores adicionales, obteniendo cada uno a partir de elevar los predictores originales a una potencia. Por ejemplo, en regresión cúbica se usan tres variables. Esto es exactamente lo que hicimos con el ejemplo de horsepower.
+- Funciones *step* cortan el rango de una variable en $K$ dsitintas regiones de manera que se produzca una variable cualitativa. Esto tiene el efecto de ajustar una función constante a pedazos.
+- *Regression splines* son más flexibles que los polinomios y las *step functions* y, de hecho, extienden a ambas. Involucran dividir el rango de $X$ en $K$ distintas regiones. Dentro de cada región, se ajusta una función polinomial a los datos. A estos polinomios se les añade lar estricción de manera que se *peguen* de manera suave en los límites de las regiones o **nudos** (knots). Si se divide el intervalo en suficientes regiones, se produce un ajuste extremadamente flexible.
+- *Smoothing splines* son similares a las splines de regresión pero se resultan de minimizar una suma de cuadrados de residuales sujetos a una penalización de suavidad (i.e. dan resultados similares a los splines de regresión pero se derivan de un método distinto).
+- *Regresión local* es similar a los splines pero difiere en que las regiones no son disjuntas.
+- Los *modelos aditivos generalizados* permiten extender los métodos anteriores para lidear para múltiples predictores (no lo revisaremos pero está en el libro base).
+
+##Ejercicio: regresión polinomial {#ejercicio}
 Ajusten un polinomio de grado tres para los datos presentados:
 ```{r}
 X <- runif(100, -1, 1)
@@ -65,10 +80,13 @@ datos <- data.frame(X=X,y=y)
 ggplot(datos,aes(x=X,y=y))+geom_point()
 ```
 
+```{r}
 
-# Polinomios a pedazos y Splines
+```
 
-Por el momento asumiremos que X sólo tiene una dimensión para facilitar ver esto. Una función polinómica a pedazos es aquella que cuando dividimos el dominio de X en distintos pedazos, y representamos $f$ en cada uno de esos intervalos con un polinomio distinto en cada uno de esos intervalos. 
+# Polinomios a pedazos 
+
+Por el momento asumiremos que $X$ sólo tiene una dimensión para facilitar ver esto. Una función polinómica a pedazos es aquella en donde dividimos el dominio de X en distintos pedazos, y representamos $f$ en cada uno de esos intervalos con un polinomio distinto en cada uno de esos intervalos. 
 
 ## Ejemplo {#ejemplo}
 Usemos estas funciones:
@@ -78,27 +96,27 @@ para aproximar la siguiente función:
 ```{r}
 X <- runif(100, -1, 1)
 y <- X^2 + runif(100,-0.3,0.3)
-datos <- data.frame(X=X,y=y)
-ggplot(datos,aes(x=X,y=y))+geom_point()
+datos <- data.frame(X=X,y=y) %>% mutate(p = ifelse(X < 0, "1", "2"))
+ggplot(datos,aes(x=X,y=y)) + 
+  geom_point() +
+  geom_smooth(method = 'lm', formula = y ~ x, aes(group = p))
+
 ```
 
-## Ejemplo {#ejemplo}
-Cambia las bases a que sean funciones 
-\[h_1(X)=X\cdot I(X<\xi_1), h_2(X)=X\cdot I(\xi_1\leq X<\xi_2), h_3(X)=X \cdot I(\xi_2\leq X),\]
+# Restricciones y splines
 
-\[h_1(X)=1, h_2(X)=X, h_3(X)=(X- \xi_1)_{+}, h_4=(X-\xi_2)_+\]
+El gráfico de arriba es demasiado flexible, es posible ajustar un polinomio a pedazos sujeto a la restricción de que la curva ajustada debe ser continua. 
 
-```{r}
-set.seed(42)
-X <- runif(100, -1, 1)
-y <- X^2+2*X^3+4*X+2 + rnorm(100,-1,1)
-datos <- data.frame(X=X,y=y)
-ggplot(datos,aes(x=X,y=y))+geom_point()
-```
+Se puede exigir ademas que la primera y segunda derizada del polinomio ajustado a pedazos sea continua. Para cada restricción liberamos un grado de libertad, al reducir la complejidad del resultado del ajuste polinomial a pedazos. 
 
-# Splines
+![](img/splines.png)
 
-Ahora qué pasa si no sólo buscamos continuidad de las funciones sino también en las derivadas de las funciones para tener cierto grado de *suavidad*. Para esto ocupamos los *splines cúbicos*. Calculemos el número de parámetros que tenemosque ajustar para un modelo. 
+Mientras que en el gráfico de arriba a la izquierda tenemos 8 grados de libertad, en el gráfico de abajo a la izquierda se tienen 5 grados de libertad porque se impuso la restricción de continuidad a la función y a sus primeras dos derivadas. 
+
+Un spline cúbico, en general, con $K$ nudos (puntos de discontinuidad) usa un total de $4+K$ grados de libertad.
+
+La definición general de un spline de grado d es que es una ajuste polinomial a pedazos con restricción de continuidad para las derivadas hasta el grado $d-1$ en cada nudo.
+
 
 Para un modelo cúbico en 3 regiones requerimos: (3 regiones)*(4 parámetros por región) - (2 nudos ) * (3 constantes por nudo) = 6. 
 
@@ -109,9 +127,11 @@ Más generalmente un spline de orden $M$, con nudos $\xi_j, j=1,...,K$, es un po
 
 Un spline cúbico tiene $M=4$, también tenemos que los splines cúbicos son los splines más pequeños para los cuales el ojo humano no nota las discontinuidades. 
 
+Existen múltiples bases a partir de las cuáles pueden ser representados splines de diferente grado, para que, posteriormente, puedan ser ajustados por mínimos cuadrados.
+
 ## Splines cúbicos naturales. 
 
-Sabemos que cerca de los extremos el comportamiento de los polinomios tiende a ser muy errático, y las extrapolaciones pueden ser peligrosas. Estos problemas se acentúan bastante con los splines. Un spline cúbico natural agrega un par de restricciones a las áreas fuera de nuestros primer y últimos nodos, $(-\infty,\xi_1), (\xi_K, \infty)$, de tal forma que sean lineales en esos intervalos. Esto es hacemos que nuestros polinomios en estas áreas sean líneas. 
+Sabemos que cerca de los extremos el comportamiento de los polinomios tiende a ser muy errático, y las extrapolaciones pueden ser peligrosas. Estos problemas se acentúan bastante con los splines. Un spline cúbico natural agrega un par de restricciones a las áreas fuera de nuestros primer y últimos nudos, $(-\infty,\xi_1), (\xi_K, \infty)$, de tal forma que sean lineales en esos intervalos. Esto es hacemos que nuestros polinomios en estas áreas sean líneas. 
 
 ## Ejemplo en R. 
 Si usamos el paquete `splines`, podemos generar una base de splines con base en los datos y los puntos de corte que queramos. 
