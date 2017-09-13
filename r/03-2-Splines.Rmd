@@ -22,9 +22,9 @@ library(ggplot2)
 
 # Introducción 
 
-Ya usamos modelos lineales tanto para regresión como para clasificación. Es importante la pregunta, ¿el mundo pareciera que puede ser modelado por modelos lineales? Ciertamente parece que es muy complicado que la relación $f(X)$ sea lineal con respecto a $X$. En los problemas de regressión típicamente se tendrá que la relación $f(X) = E[Y  | X]$  será no lineal, sin embargo muchas veces nos resulta conveniente y a veces necesario llevar una aproximación lineal a los fenómenos estudiados. 
+Ya usamos modelos lineales tanto para regresión como para clasificación. Es importante la pregunta, ¿el mundo pareciera que puede ser modelado por modelos lineales? Ciertamente parece que es muy complicado que la relación $f(X)$ sea lineal con respecto a $X$. En los problemas de regresión típicamente se tendrá que la relación $f(X) = E[Y  | X]$  será no lineal, sin embargo muchas veces nos resulta conveniente y a veces necesario llevar una aproximación lineal a los fenómenos estudiados. 
 
-Es conveniente, porque un modelo lineal es mucho más fácil de interpretar, y si lo vemos desde el punto de vista de cálculo, estamos aproximando la función $F(X) por su aproximación de Taylor de primer orden. 
+Es conveniente, porque un modelo lineal es mucho más fácil de interpretar, y si lo vemos desde el punto de vista de cálculo, estamos aproximando la función $F(X)$ por su aproximación de Taylor de primer orden. 
 
 Ahora nos dedicaremos a estudiar otros métodos para salirnos de la linealidad. La idea básica proviene de modificar un poco nuestros vectores de entradas $X$ con variables adicionales que serán transformaciones de $X$ y luego usar modelos lineales con el nuevo espacio de variables de entrada. 
 
@@ -43,7 +43,9 @@ Algunos ejemplos de funciones que podemos usar como $h_m$ son los siguientes:
 - $h_m(X) = \log(X_j)$, abriendo la posibilidad a muchas otras funciones no lineales. 
 - $h_m(X) = I(L_m \leq X_x < U_m)$, una función indicadora para distintas regiones de $X_k$. Lo que resulta en distintas funciones constantes a pedazos. 
 
-Dependiendo del problema la base a usar, será distinta. Usaremos estas nuevas funciones y bases para generar una manera más flexible de representar $f(X)$. Los polinomios son una muy buena forma de aproximar cualquier funcion localmente, sin embargo tienden a comportarse de maneras erráticas de manera global. Ajustar una región de una función con un polinomio puede implicar que en valores grandes de nuestras entradas, el polinomio tome valores muy extremos. 
+Dependiendo del problema la base a usar, será distinta. Usaremos estas nuevas funciones y bases para generar una manera más flexible de representar $f(X)$. 
+
+Los polinomios son una muy buena forma de aproximar cualquier función localmente, sin embargo tienden a comportarse de maneras erráticas de manera global. Ajustar una región de una función con un polinomio puede implicar que en valores grandes de nuestras entradas, el polinomio tome valores muy extremos. 
 
 Resulta importante tener una manera de controlar la complejidad de los modelos, usualmente se tienen 3 maneras de hacerlo: 
 

@@ -56,7 +56,7 @@ probabilidad $1/N$), cada uno de ellos asociado a un número entre $1$ y $N$.
 2. Los enteros determinan las unidades que seleccionamos: 
 $u_1=U_{j_1},u_2=U_{j_2},...,u_n=U_{j_n}$.
 
-En la práctica el proceso de selección suele ser más complicado y la población
+En la práctica el proceso de selección suele ser más complicado y la
 definición de  la población $U$ suele ser deficiente; sin embargo el marco
 conceptual sigue siendo útil para entender la inferencia estadística.
 
@@ -67,7 +67,7 @@ repeticiones y si el tamaño de la muestra $n$ es mucho más chico que la
 población $N$, la probabilidad de muestrear la misma unidad más de una vez
 es chica.
 
-Una vez que selecciona una muestra aleatoria $u_1,...,u_n$ obtenemos una o más
+Una vez que se selecciona una muestra aleatoria $u_1,...,u_n$ obtenemos una o más
 medidas de interés para cada unidad. Los *datos observados* son la colección
 de medidas $x_1,...,x_n$, que también denotaremos $\textbf{x} = (x_1,...,x_n)$.
 
@@ -169,11 +169,16 @@ variable tipo de escuela, entonces la distribución empírica en la muestra es
 table(prim_muestra$tipo) / n
 ```
 
+Y del universo en el DF:
+
+```{r}
+table(prim$tipo) / nrow(prim)
+```
+
 Vale la pena notar que pasar de la muestra desagregada a la distribución 
 empírica (lista de valores y la proporción que ocurre cada una en la muestra) 
 no conlleva ninguna pérdida de información: el vector de frecuencias observadas 
-es un **estadístico suficiente** para la verdadera distribución. Esto quiere 
-decir que toda la información de $P$ contenida en el vector de 
+es un **estadístico suficiente** para la verdadera distribución. Esto quiere decir que toda la información de $P$ contenida en el vector de 
 observaciones $\textbf{x}$ está también contenida en $P_n$.
 
 **Nota**: el teorema de suficiencia asume que las observaciones $\textbf{x}$ son
@@ -215,6 +220,8 @@ de español para 3^o de primaria:
 
 ```{r}
 median(prim_muestra$esp3)
+
+median(prim$esp3)
 ```
 
 * Supongamos que nos interesa estimar la probabilidad de que la calificación de 
@@ -228,6 +235,8 @@ Hacemos la estimación _plug-in_ $\hat{\theta}$:
 
 ```{r}
 sum(prim_muestra$esp3 > 700) / n
+
+sum(prim$esp3 > 700) / nrow(prim)
 ```
 
 En este caso no tenemos un censo, solo contamos con la muestra. Una pregunta
@@ -422,6 +431,8 @@ y se compara con
 ```{r}
 se <- function(x) sqrt(sum((x - mean(x)) ^ 2)) / length(x)
 se(prim_muestra$esp3)
+
+qplot(x = thetas_boot$V1, geom = "histogram")
 ```
 
 ### Ejercicio {#ejercicio}
@@ -452,7 +463,7 @@ sd(thetas_boot$V1)
 La estimación bootstrap ideal es un resultado asintótico $B=\infty$, en esta 
 caso $\hat{se}_B$ iguala la estimación _plug-in_ $se_{P_n}$. En la práctica para 
 elegir el tamaño de $B$ debemos considerar que buscamos las mismas propiedades 
-para la estimación de un error esrándar que para cualquier estimación: poco 
+para la estimación de un error estándar que para cualquier estimación: poco 
 sesgo y desviación estándar chica. El sesgo de la estimación bootstrap del 
 error estándar suele ser bajo y el error estándar está
 
@@ -474,6 +485,10 @@ se busca estimar **error estándar**.
 
 ### Ejemplo {#ejemplo}
 
+Realizamos varios cálculos del estimador de la desviación estándar de la media de las calificaciones de español de tercer año.
+
+En cada caso, usamos diferente número de replicaciones bootstrap, de manera que podamos ver el efecto de un mayor número de replicaciones bootstrap.
+
 ```{r, cache=TRUE}
 seMediaBoot <- function(x, B){
   thetas_boot <- rdply(B, mediaBoot(x))
@@ -484,6 +499,7 @@ B_muestras <- c(5, 25, 50, 100, 200, 400, 800, 1600, 3200)
 sapply(B_muestras, function(i) seMediaBoot(x = prim_muestra$esp3, B = i))
 ```
 
+Estimamos la correlación entre las calificaciones de español en tercero y en sexto. Comparamos la estimación de la correlación con bootstrap y a partir de distintas muestras aleatorias. En cada caso hacemos 5 mil replicas.
 
 ```{r, echo=FALSE, cache=TRUE, fig.width=6, fig.height = 4.5}
 corrBoot <- function(x, y, n){
