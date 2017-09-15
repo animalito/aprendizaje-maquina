@@ -21,15 +21,114 @@ library(igraph)
 ```
 # Introducción
 
-Las redes neuronales son un método de aprendizaje que fue desarrollado en distintas áreas (estadística e inteligencia artificial). Fue desarrollado a finales de los años 40 y principios de los 50. Se tomó como base el cerebro humano y la red de neuronas que lo componen para generar el pensamiento humano. 
+## ¿Por qué las necesitamos?
 
-La idea central es extraer combinaciones lineales de entradas como características derivadas y luego modelar la variable respuesta como combinación no lineal de los resultados de las mismas. Se dejaron de usar cuando se identificó que el poder de cómputo no era el suficiente para llevarlos a cabo; sin embargo con el desarrollo del algoritmo *backpropagation* y el poder de cómputo actual, las redes neuronales retomaron popularidad. Actualmente son el corazón de los modelos de *deep learning*. 
+No linealidad.
+
+![](img/rn1.png)
+
+Si tenemos una gran cantidad de covariables, digamos 100, el número de features cuadráticos que podemos agregar es de aproximadamente 5 mil ($x_1^2, x_1x_2, x1_x2, ..., x_1x_{100}, x_2^2, ...$). En realidad el numero de features cuadraticos qeu podemos agregar es $\frac{n^2}{2}$. Si se agregan todos, es casi seguro que tendremos un sobreajuste.
+
+Se pueden agregar, después hacer una selección de variables. Incluir ya los polinomios de tercer orden hace que el problema explote. Tendríamos aproximadamente $n^3$ features, en el ejemplo de 100 predictores, tenemos 170 mil nuevos regresores. Esto no escala de manera apropiada, particularmente en algunos contextos de ML.
+
+Por ejemplo, pensemos en ejemplos de vision de computadoras. Tenemos imagenes y digamos que la computadora quiere reconocer los objetos en ellas. Nosotros vemos, por ejemplo, una silla. La computadora ve los colores en los pixeles. 
+
+Al entrenar un algoritmo para esta tarea, se le da un conjunto de imagenes etiquetadas de sillas y otro conjunto de imagenes de cosas que no son sillas.
+
+En el conjunto de prueba, se revisara cuan bueno fue el algoritmo que capture el objeto en forma adecuada.
+
+Para hacer esto, por ejemplo, podemos tomar dos pixeles cualesquiera en la imagen. Y graficamos estos dos y todo el conjunto de datos de entrenamiento en si fueron una silla o no.
+
+![](img/rn2.png)
+
+Necesitamos separar las sillas de las no sillas en ese espacio para dos pixeles.
+
+Si las imagenes son de $50x50$ entonces cada imagen es de 2500 pixeles. Tenemos entonces un vector de intensidades por pixel  $x = [pixel_1, pixel_2, ..., pixel_{2500}]$
+
+Si queremos meter features cuadraticas, tendriamos cerca de 3 millones de features adicionales. La regresion logistica, con relajacion del supuesto de linealidad, no funcionara. Las redes neuronales puede aprender features complejas en este tipo de esenarios.
+
+## Contexto de redes neuronales
+
+Se tomó como base el cerebro humano y la red de neuronas que lo componen para generar el pensamiento humano.
+
+Las redes neuronales son un método de aprendizaje que fue desarrollado en distintas áreas (estadística e inteligencia artificial). Fue desarrollado a finales de los años 40 y principios de los 50. Fueron muy utilizadas en los 80s y 90s.  
+
+Resurgen por las capacidades de cómputo. Las redes neuronales son actualmente el estado del arte para muchas aplicaciones de aprendizaje de máquina.
+
+De cómo aprende el cerebro tenemos solo hipótesis pero parece que el cerebro tiene un solo algoritmo de aprendizaje. Hay experimentos en donde cortan el cortex auditivo y lo reprogramas (neurorewiring experiments), con la vista, los animales "aprenden a escuchar".
+
+La idea es generar un algortimo único, similar al del cerebro, que pueda procesar distintos tipos de datos (distintos sensores y aprender a utilizar las entradas de dichos sensores). 
+
+## ¿Cómo representamos redes neuronales?
+
+¿Cómo representamos la hipótesis en una red neuronal? 
+
+El cerebro está formado por neuronas y cada una de estas tiene un núcleo y dendritas (estas reciben entradas) y axones (estas dan salidas a otras neuronas). Las neuronas se comunican por pulsos de electricidad. Cada neurona recibe entradas, hace un cómputo y, a veces envía mensajes. Así funcionan también nuestros músculos: las neuronas mandan un pulso de electricidad y éste se contrae.
+
+En una red artificial se usa un modelo muy simple de las neuronas del cerebro. 
+
+![](img/rn3.png)
+
+en donde $x = [x_0, x_1, x_2, x_3]$, $\theta = [\theta_0, \theta_1, \theta_2, \theta_3]$ y
+
+\[
+h_{\theta}(x) = \frac{1}{1 + e^{-\theta^{T}x}}
+\]
+
+$x_0 = 1$ y normalmente se le llama la unidad de sesgo.
+
+Esta es una neurona artificial con una función de activación logística o sigmoide. En la literatura a los $\theta$s les llaman pesos pero son parámetros.
+
+En la siguiente figura, se muestra una red neuronal que amplía la imagen que ya habíamos visto de una sola neurona.
+
+![](img/rn4.png)
+
+Puede agregarse una unidad de sesgo en cada capa: $x_0$ y $a_0^{(2)}$. A la primera capa se le llama la capa de entrada (*input layer*), a la segunda se le llama la capa oculta (*hidden layer*) y a la última la capa de salida (*output layer*). Todo lo que no sea input o output layer se le llama capa oculta. 
+
+Con esta notación,
+
+- $a_i^{(j)}$ es la activacion de la unidad $i$ en la capa $j$.
+- $\theta^{(j)}$ es la matriz de pesos que controla el mapeo de la funcion d ela capa $j$ a la $j+1$. 
+En este caso, se aplica la funcion sigmoide (o logistica) a una combinacion lineal de las entradas:
+
+\[
+a_1^{(2)} = g(\theta_{10}^{(1)x_0} + \theta_{11}^{(1)x_1} + \theta_{12}^{(1)x_2} + \theta_{13}^{(1)x_3})
+\]
+
+\[
+a_2^{(2)} = g(\theta_{20}^{(1)x_0} + \theta_{21}^{(1)x_1} + \theta_{22}^{(1)x_2} + \theta_{23}^{(1)x_3})
+\]
+
+\[
+a_3^{(2)} = g(\theta_{30}^{(1)x_0} + \theta_{31}^{(1)x_1} + \theta_{32}^{(1)x_2} + \theta_{33}^{(1)x_3})
+\]
+
+\[
+h_{\theta}^{(x)} = a_1^{(3)} = g(\theta_{10}^{(2)}a_0^{(2)} + \theta_{11}^{(2)}a_1^{(2)} +\theta_{12}^{(2)}a_2^{(2)}+\theta_{13}^{(2)}a_3^{(2)})
+\]
+
+
+
+Se tienen 3 unidades de entrada, 3 unidades ocultas y $\theta^{(1)} \in R^{3x4}$.
+
+En general, si la red tiene $s_j$ unidades en la capa $j$, $s_{j+1}$ unidades en la capa $j+1$, entonces $\theta^{(j)}$ tiene dimension $s_{j+1} * (s_j+1)$
+
+Nota como $\theta^{(2)}$ en el ejemplo graficado denota el mapeo de la capa oculta a la capa de salida. 
+
+### {#importante}
+
+La idea central es extraer 
+combinaciones lineales de entradas como características derivadas y luego modelar la variable respuesta como combinación no lineal de los resultados de las mismas. 
+
+Se dejaron de usar cuando se identificó que el poder de cómputo no era el suficiente para llevarlos a cabo; sin embargo con el desarrollo del algoritmo *backpropagation* y el poder de cómputo actual, las redes neuronales retomaron popularidad. 
+
+Actualmente son el corazón de los modelos de *deep learning*. 
 
 Es un método muy poderoso que se ha usado en muchas disciplinas, principalmente para reconocimiento de imágenes, voz, *feature extraction* y cuando los datos vienen de sensores. 
 
 # Redes Neuronales 
 
-Las redes neuronales agrupan una gran cantidad de métodos de aprendizaje derivado del modelo más básico que veremos ahora; red neuronal de una capa. Las redes neuronales tienen muchísimo ~~MAME~~ *hype*, lo que las hace sonar a magia negra o un arte místico. Son un conjunto de modelos estadísticos, como los que hemos visto con anterioridad. 
+Las redes neuronales agrupan una gran cantidad de métodos de aprendizaje derivado del modelo más básico que veremos ahora; red neuronal de una capa. Las redes neuronales tienen mucho *hype*, lo que las hace sonar a magia negra o un arte místico. Son un conjunto de modelos estadísticos, como los que hemos visto con anterioridad. 
 
 Una red neuronal es un modelo de regresión o clasificación de dos etapas, la manera más sencilla de representarla es a través de un grafo. 
 
@@ -220,7 +319,7 @@ plot(nn)
 ```
 Y los resultados se ven así: 
 
-```{r}
+```{r, eval = F}
 p.3 <- predict(nn, newdata=data.frame(x.1=x))
 ggplot(dat.2, aes(x=x, y=p.3)) + geom_line()+
 geom_line(data=dat.p, aes(x=x,y=p), col='red') +ylim(c(0,1))+
