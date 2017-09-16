@@ -702,7 +702,7 @@ provocan la ejecución del /query/
 
 ## Leamos de nuevo desde disco
 txs_df = spark.read.load("./spark-ejemplo/output/parquet/transacciones/")
-txs_df.select(txs_df['tdc'], txs_df['accion'], txs_df['monto'], txs_df['monto'] >= 5000).show(5)
+txs_df.select(txs_df['tdc'], txs_df['accion'], txs_df['monto']).filter(txs_df['monto'] >= 5000).show(5)
 spark.sql("select tdc, accion, monto, monto >= 5000 from txs").show(5)
 txs_df.filter((txs_df["monto"] >= 5000) & (txs_df["accion"] == "RETIRO"))\
       .select(txs_df["tdc"], txs_df["comercio"], txs_df["monto"])\
