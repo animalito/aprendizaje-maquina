@@ -230,6 +230,8 @@ feed.fow <- function(beta, x){
   p <- h(beta[5]+beta[6]*a.1 + beta[7]*a.2) # calcula capa de salida
   p
 }
+
+feed.fow(c(1,2,3,4,5,6,7,8),23)
 ```
 
 ## Optimización 
@@ -341,6 +343,30 @@ dat.p <- data.frame(x,p)
 g <- qplot(x,p, geom='line', col='red')
 g + geom_jitter(data = datos, aes(x=x.2,y=g.2), col ='black',
   position =position_jitter(height=0.05), alpha=0.4)
+
+#ahora feed.fow modificar feed.fow para que reciba 13 en vez de 7
+feed.fow <- function(b,x){
+  a.1 <- h(b[1] + b[2]*x) 
+  a.2 <- h(b[3] + b[4]+x) 
+  a.3 <- h(b[5] + b[6]*x) 
+  a.4 <- h(b[7] + b[8]+x) 
+  
+  p<-h(b[9]+b[10]*a.1+b[11]*a.2+b[12]*a.3+b[13]*a.4)
+  p
+}
+  
+dev.r <- devianza.reg(x.2, g.2, 0.001) # crea funciÃ³n dev
+set.seed(5)
+salida <- optim(rnorm(13), dev.r, method='BFGS') # inicializar al azar punto inicial
+salida
+beta <- salida$par
+
+dev(beta)
+p.2 <- feed.fow(beta, x)
+dat.2 <- data.frame(x, p.2=p.2)
+
+ggplot(dat.2, aes(x=x, y=p.2)) + geom_line()+
+geom_line(data=dat.p, aes(x=x,y=p), col='red') +ylim(c(0,1))
 ```
 
 Agregen dos neuronas a su red en caso de ser necesario. 
