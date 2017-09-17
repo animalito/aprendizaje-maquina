@@ -755,13 +755,13 @@ txs_sospechosas.write.parquet("./spark-ejemplo/output/parquet/transacciones_sosp
 Podemos repetir el primer ejemplo  pero ahora usando los =Spark Datasets=
 
 #+BEGIN_EXAMPLE ipython
-parsed = spark.read.csv("./spark-ejemplo/data/linkage/")
+prev = spark.read.csv("./spark-ejemplo/linkage/")
 prev.show()
-prev = spark.read.csv("./spark-ejemplo/data/linkage/", header=True)
+prev = spark.read.csv("./spark-ejemplo/linkage/", header=True)
 prev.show()
-prev = spark.read.csv("./spark-ejemplo/data/linkage/", header=True, nullValue="?")
+prev = spark.read.csv("./spark-ejemplo/linkage/", header=True, nullValue="?")
 prev.show()
-prev = spark.read.csv("./spark-ejemplo/data/linkage/", header=True, nullValue="?", inferSchema=True)
+prev = spark.read.csv("./spark-ejemplo/linkage/", header=True, nullValue="?", inferSchema=True)
 prev.show()
 prev.printSchema()
 #+END_EXAMPLE
